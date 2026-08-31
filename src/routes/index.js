@@ -1,0 +1,43 @@
+import { Router } from "express";
+import authRouter from "./auth.route.js";
+import userRouter from "./user.route.js";
+import { productRouter, adminProductRouter } from "./product.route.js";
+import productOptionRouter from "./product-option.route.js";
+import productVariantRouter from "./product-variant.route.js";
+import productImageRouter from "./product-image.route.js";
+import { publicCategoryRouter, adminCategoryRouter } from "./category.route.js";
+import { publicCollectionRouter, adminCollectionRouter } from "./collection.route.js";
+import inventoryRouter from "./inventory.route.js";
+import cartRouter from "./cart.route.js";
+import { publicVoucherRouter, adminVoucherRouter } from "./voucher.route.js";
+import orderRouter from "./order.route.js";
+import adminOrderRouter from "./admin-order.route.js";
+import adminUserRouter from "./admin-user.route.js";
+import adminAuditLogRouter from "./admin-audit-log.route.js";
+import paymentRouter from "./payment.route.js";
+
+const router = Router();
+router.get("/health", (req, res) => res.json({ success: true, code: "HEALTHY", message: "OK", data: { status: "up" } }));
+router.use("/auth", authRouter);
+router.use("/users", userRouter);
+router.use("/products", productRouter);
+router.use("/admin/products", adminProductRouter);
+router.use("/admin", productOptionRouter);
+router.use("/admin", productVariantRouter);
+router.use("/admin", productImageRouter);
+router.use("/categories", publicCategoryRouter);
+router.use("/admin", adminCategoryRouter);
+router.use("/collections", publicCollectionRouter);
+router.use("/admin", adminCollectionRouter);
+router.use("/admin", inventoryRouter);
+router.use("/cart", cartRouter);
+router.use("/vouchers", publicVoucherRouter);
+router.use("/admin", adminVoucherRouter);
+router.use("/orders", orderRouter);
+router.use("/admin", adminOrderRouter);
+router.use("/admin/users", adminUserRouter);
+router.use("/admin/audit-logs", adminAuditLogRouter);
+router.use("/payments", paymentRouter);
+
+export default router;
+

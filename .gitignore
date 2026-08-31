@@ -1,0 +1,243 @@
+# ==========================================
+# 1. Thư viện hệ thống (Bắt buộc phải chặn)
+# ==========================================
+node_modules/
+jspm_packages/
+web_stage/
+
+# ==========================================
+# 2. File bảo mật & Biến môi trường (Tuyệt đối không đẩy lên Git)
+# ==========================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# Không chặn file mẫu cấu hình
+!.env.example
+
+# ==========================================
+# 3. File Log hệ thống và bộ nhớ đệm
+# ==========================================
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Bộ nhớ đệm của nodemon và hệ thống
+.nodemonignore
+.npm
+.eslintcache
+.stylelintcache
+.node_repl_history
+
+# ==========================================
+# 4. File rác từ các Hệ điều hành (OS)
+# ==========================================
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.lnk
+*.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.trash/
+.nfs*
+
+# ==========================================
+# 5. Thư mục Build / Output (Khi deploy hoặc đóng gói)
+# ==========================================
+dist/
+build/
+out/
+.next/
+.nuxt/
+.cache/
+stress-test.js
+load-test.js
+# ==========================================
+# 6. File cấu hình của các IDE / Code Editor
+# ==========================================
+# VS Code
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+
+# WebStorm / JetBrains
+.idea/
+
+# Thư mục kiểm thử (Nếu bạn tự tạo file test cá nhân)
+.coverage/
+coverage/
+*.lcov
+
+# Project-specific
+artifacts/
+*.tar.gz
+*.tgz
+# External references
+_ref/
+.codegraph/
+# Local operations state
+_ops/
+# Environment
+.env.*
+!.env.example
+# OS metadata
+
+# Local agent/workflow material (kept on developer machines only)
+/scripts/
+/tasks/
+/docs/
+/deploy/
+/plans/
+/AGENTS.md
+/CLAUDE.md
+.ai
+.claude
+.deploy
+.plans
+/.agents/skills/repo-harness-chatgpt-bridge/
+
+# BEGIN: claude-runtime-temp (managed by repo-harness)
+.claude/settings.local.json
+.claude/.atomic_pending
+.claude/.session-id
+.claude/.trace.jsonl
+.claude/.session-handoff.md
+.claude/.task-state.json
+.claude/.task-handoff.md
+.claude/.codegraph-state/
+.claude/*.tmp
+.claude/*.bak
+.claude/*.bak.*
+.claude/*.backup-*
+tasks/.current.md.tmp.*
+.ai/harness/checks/latest.json
+.ai/harness/checks/*.latest.json
+.ai/harness/checks/*.latest.md
+.ai/harness/checks/post-bash-latest.json
+.ai/harness/events.jsonl
+.ai/harness/archive/
+.ai/harness/failures/latest.jsonl
+.ai/harness/handoff/current.md
+.ai/harness/handoff/resume.md
+.ai/harness/capability-context/
+.ai/harness/security/*
+!.ai/harness/security/.gitkeep
+.ai/harness/planning/*
+!.ai/harness/planning/.gitkeep
+.ai/harness/delegation/*
+.ai/harness/architecture/events.jsonl
+.ai/harness/active-plan
+.ai/harness/active-worktree
+.ai/harness/sprint/
+.ai/harness/worktrees/
+.ai/harness/runs/
+.ai/harness/chatgpt/browser-lock.json
+.ai/harness/chatgpt/tmp/
+.ai/harness/chatgpt/sessions/
+.ai/harness/triage/*
+!.ai/harness/triage/.gitkeep
+.repo-harness/chatgpt-browser.local.json
+.repo-harness/chatgpt-browser.tokens.json
+.codex/*
+.claude/.active-plan
+.claude/.plan-state/
+# repo-harness generated helper wrappers
+scripts/new-spec.sh
+scripts/new-sprint.sh
+scripts/new-plan.sh
+scripts/capture-plan.sh
+scripts/plan-to-todo.sh
+scripts/contract-run.ts
+scripts/contract-worktree.sh
+scripts/ship-worktrees.sh
+scripts/archive-workflow.sh
+scripts/refresh-current-status.sh
+scripts/prepare-handoff.sh
+scripts/verify-contract.sh
+scripts/summarize-failures.sh
+scripts/verify-sprint.sh
+scripts/harness-trace-grade.sh
+scripts/sprint-backlog.sh
+scripts/check-task-sync.sh
+scripts/check-deploy-sql-order.sh
+scripts/check-architecture-sync.sh
+scripts/check-agent-tooling.sh
+scripts/check-context-files.sh
+scripts/check-brain-manifest.sh
+scripts/sync-brain-docs.sh
+scripts/check-skill-version.ts
+scripts/select-agent-context-blocks.sh
+scripts/ensure-task-workflow.sh
+scripts/check-task-workflow.sh
+scripts/maintenance-triage.sh
+scripts/heartbeat-triage.sh
+scripts/switch-plan.sh
+scripts/workflow-contract.ts
+scripts/inspect-project-state.ts
+scripts/migrate-workflow-docs.ts
+scripts/migrate-project-template.sh
+scripts/capability-resolver.ts
+scripts/architecture-event.ts
+scripts/capability-config.ts
+scripts/architecture-queue.sh
+scripts/archive-architecture-request.sh
+scripts/context-contract-sync.sh
+scripts/workstream-sync.sh
+scripts/prepare-codex-handoff.sh
+scripts/codex-handoff-resume.sh
+scripts/repo-harness/
+# END: claude-runtime-temp
+src/tests/
+
+# ORCID scan deliverables: keep only the feature migration and tests trackable.
+!/deploy/
+/deploy/*
+!/deploy/sql/
+/deploy/sql/*
+!/deploy/sql/0003_add_orcid_scan_unique_indexes.sql
+!/deploy/sql/0004_add_orcid_scan_journal_identity.sql
+
+!/src/tests/
+/src/tests/*
+!/src/tests/unit/
+/src/tests/unit/*
+!/src/tests/unit/utils/
+/src/tests/unit/utils/*
+!/src/tests/unit/utils/orcid.test.js
+!/src/tests/unit/services/
+/src/tests/unit/services/*
+!/src/tests/unit/services/orcidSources.test.js
+!/src/tests/unit/services/orcidScan.test.js
+!/src/tests/unit/services/orcidScanRepository.test.js
+!/src/tests/unit/services/articleReferenceHydration.test.js
+!/src/tests/integration/
+/src/tests/integration/*
+!/src/tests/integration/orcidScan.route.test.js
+!/src/tests/integration/articleReferenceHydration.route.test.js
