@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { requestOtp, verifyOtp, refresh, logout, me } from "../controllers/auth.controller.js";
+import { requestOtp, verifyOtp, googleLogin, refresh, logout, me } from "../controllers/auth.controller.js";
 import { requireAuth } from "../middlewares/auth.middleware.js";
 import { validateBody } from "../middlewares/validate.middleware.js";
-import { validateRequestOtp, validateVerifyOtp } from "../utils/validation.js";
+import { validateGoogleLogin, validateRequestOtp, validateVerifyOtp } from "../utils/validation.js";
 
 const router = Router();
 
@@ -136,6 +136,8 @@ router.post("/request-otp", validateBody(validateRequestOtp), requestOtp);
  *         description: Đã thử OTP sai quá 5 lần
  */
 router.post("/verify-otp", validateBody(validateVerifyOtp), verifyOtp);
+
+router.post("/google", validateBody(validateGoogleLogin), googleLogin);
 
 /**
  * @swagger

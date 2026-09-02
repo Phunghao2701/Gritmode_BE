@@ -22,9 +22,12 @@ export const createProductController = ({ service = productService } = {}) => ({
 
   getProductById: async (req, res, next) => {
     try {
-      const productId = validatePositiveId(req.params.productId);
-      const getDetailMethod = service.getProductById || service.getById || service.findDetail;
-      const data = await getDetailMethod.call(service, productId);
+      const identifier = req.params.productId;
+      const data = /^\d+$/.test(identifier)
+        ? await service.getProductById(Number(identifier))
+        : service.getProductBySlug
+        ? await service.getProductBySlug(identifier)
+        : await service.getProductById(validatePositiveId(identifier));
       return ok(res, data, { message: "Product retrieved successfully" });
     } catch (e) {
       next(e);

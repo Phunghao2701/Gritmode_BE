@@ -4,9 +4,16 @@ import {
   validateRequestOtp,
   validateVerifyOtp,
   validateRefreshToken,
+  validateGoogleLogin,
 } from "../../../src/utils/validation.js";
 
 describe("auth validation primitives", () => {
+  test("validateGoogleLogin requires a credential and normalizes guest_token", () => {
+    const valid = validateGoogleLogin({ access_token: "x".repeat(20), guest_token: " guest-1 " });
+    assert.ok(valid.ok);
+    assert.equal(valid.value.guest_token, "guest-1");
+    assert.ok(!validateGoogleLogin({ access_token: "short" }).ok);
+  });
   // ── validateRequestOtp ───────────────────────────────────────────────────
   describe("validateRequestOtp", () => {
     test("accepts valid email and normalizes it to lowercase", () => {

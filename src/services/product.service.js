@@ -25,10 +25,20 @@ export const createProductService = ({
     const page = query.page || 1;
     const limit = query.limit || 20;
     const pagination = { page, limit };
+    let categoryId = query.category_id;
+    if (!categoryId && query.category_slug) {
+      const category = await categories.findBySlug(query.category_slug);
+      categoryId = category?.category_id || -1;
+    }
+    let collectionId = query.collection_id;
+    if (!collectionId && query.collection_slug) {
+      const collection = await collections.findBySlug(query.collection_slug);
+      collectionId = collection?.collection_id || -1;
+    }
     const filters = {
       search: query.search,
-      category_id: query.category_id,
-      collection_id: query.collection_id,
+      category_id: categoryId,
+      collection_id: collectionId,
       min_price: query.min_price,
       max_price: query.max_price,
       status_product: PRODUCT_STATUS.ACTIVE,
@@ -68,6 +78,14 @@ export const createProductService = ({
       throw notFound("PRODUCT_NOT_FOUND", "Không tìm thấy sản phẩm");
     }
     return product;
+  },
+
+  async getProductBySlug(slug) {
+    const product = await products.findBySlug(slug);
+    if (!product || product.status_product !== PRODUCT_STATUS.ACTIVE) {
+      throw notFound("PRODUCT_NOT_FOUND", "Không tìm thấy sản phẩm");
+    }
+    return this.getProductById(product.product_id);
   },
 
   async getAdminProductById(productId) {
@@ -403,6 +421,7 @@ const defaultProductService = createProductService();
 export const getProducts = (query) => defaultProductService.getProducts(query);
 export const getAdminProducts = (query) => defaultProductService.getAdminProducts(query);
 export const getProductById = (productId) => defaultProductService.getProductById(productId);
+export const getProductBySlug = (slug) => defaultProductService.getProductBySlug(slug);
 export const getAdminProductById = (productId) => defaultProductService.getAdminProductById(productId);
 export const publishProduct = (productId, adminUserId) => defaultProductService.publishProduct(productId, adminUserId);
 export const archiveProduct = (productId, adminUserId) => defaultProductService.archiveProduct(productId, adminUserId);

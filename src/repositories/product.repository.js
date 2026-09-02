@@ -2,6 +2,13 @@ import pool from "../config/database.js";
 
 const runner = (client) => client || pool;
 
+const slugifyProductName = (name = "") => String(name)
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "")
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, "-")
+  .replace(/^-+|-+$/g, "");
+
 const buildWhereClause = (filters, values) => {
   const conditions = [];
 
@@ -17,7 +24,21 @@ const buildWhereClause = (filters, values) => {
 
   if (filters.category_id) {
     values.push(filters.category_id);
-    conditions.push(`EXISTS (SELECT 1 FROM product_category pc WHERE pc.product_id = p.product_id AND pc.category_id = $${values.length})`);
+    conditions.push(`EXISTS (
+      WITH RECURSIVE category_tree AS (
+        SELECT category_id
+        FROM category
+        WHERE category_id = $${values.length}
+        UNION ALL
+        SELECT child.category_id
+        FROM category child
+        JOIN category_tree parent ON child.parent_category_id = parent.category_id
+      )
+      SELECT 1
+      FROM product_category pc
+      JOIN category_tree ct ON ct.category_id = pc.category_id
+      WHERE pc.product_id = p.product_id
+    )`);
   }
 
   if (filters.collection_id) {
@@ -39,8 +60,8 @@ const buildWhereClause = (filters, values) => {
 };
 
 const sortOrderMap = {
-  newest: "p.created_at DESC",
-  oldest: "p.created_at ASC",
+  newest: "p.created_at DESC NULLS LAST, p.product_id DESC",
+  oldest: "p.created_at ASC NULLS LAST, p.product_id ASC",
   price_asc: "min_price ASC NULLS LAST, p.product_id ASC",
   price_desc: "max_price DESC NULLS LAST, p.product_id ASC",
   name_asc: "p.name_product ASC",
@@ -93,6 +114,16 @@ export const productRepository = {
           WHERE pv.product_id = p.product_id
         ) AS max_price,
         (
+          SELECT MIN(pv.price)::numeric
+          FROM product_variant pv
+          WHERE pv.product_id = p.product_id
+        ) AS original_min_price,
+        (
+          SELECT MAX(pv.price)::numeric
+          FROM product_variant pv
+          WHERE pv.product_id = p.product_id
+        ) AS original_max_price,
+        (
           SELECT pi.url_product_image
           FROM product_image pi
           WHERE pi.product_id = p.product_id
@@ -121,6 +152,8 @@ export const productRepository = {
       thumbnail: row.thumbnail || null,
       min_price: row.min_price !== null ? Number(row.min_price) : null,
       max_price: row.max_price !== null ? Number(row.max_price) : null,
+      original_min_price: row.original_min_price !== null ? Number(row.original_min_price) : null,
+      original_max_price: row.original_max_price !== null ? Number(row.original_max_price) : null,
       is_available: Boolean(row.is_available),
       variant_count: Number(row.variant_count || 0),
       created_at: row.created_at,
@@ -141,6 +174,24 @@ export const productRepository = {
       status_product: rows[0].status_product,
       created_at: rows[0].created_at,
       updated_at: rows[0].updated_at,
+    };
+  },
+
+  async findBySlug(slug, client) {
+    const { rows } = await runner(client).query(
+      `SELECT product_id, name_product, description, status_product, created_at, updated_at
+       FROM product
+       WHERE status_product = 'active'`,
+    );
+    const product = rows.find((row) => slugifyProductName(row.name_product) === slugifyProductName(slug));
+    if (!product) return null;
+    return {
+      product_id: Number(product.product_id),
+      name_product: product.name_product,
+      description: product.description,
+      status_product: product.status_product,
+      created_at: product.created_at,
+      updated_at: product.updated_at,
     };
   },
 

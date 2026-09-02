@@ -15,8 +15,8 @@ export const getDashboardStats = async (req, res, next) => {
     const [ordersRes, productsRes, usersRes, inventoryRes] = await Promise.all([
       pool.query(`
         SELECT
-          COALESCE(SUM(CASE WHEN o.status_order != 'cancelled' AND o.created_at >= date_trunc('month', CURRENT_DATE) THEN o.total_order ELSE 0 END), 0)::float AS revenue_this_month,
-          COALESCE(SUM(CASE WHEN o.status_order != 'cancelled' AND o.created_at >= date_trunc('month', CURRENT_DATE - INTERVAL '1 month') AND o.created_at < date_trunc('month', CURRENT_DATE) THEN o.total_order ELSE 0 END), 0)::float AS revenue_last_month,
+          COALESCE(SUM(CASE WHEN o.status_order = 'completed' AND o.created_at >= date_trunc('month', CURRENT_DATE) THEN o.total_order ELSE 0 END), 0)::float AS revenue_this_month,
+          COALESCE(SUM(CASE WHEN o.status_order = 'completed' AND o.created_at >= date_trunc('month', CURRENT_DATE - INTERVAL '1 month') AND o.created_at < date_trunc('month', CURRENT_DATE) THEN o.total_order ELSE 0 END), 0)::float AS revenue_last_month,
           COUNT(*)::int AS total_orders,
           COUNT(CASE WHEN o.created_at >= date_trunc('month', CURRENT_DATE) THEN 1 END)::int AS orders_this_month,
           COUNT(CASE WHEN o.created_at >= date_trunc('month', CURRENT_DATE - INTERVAL '1 month') AND o.created_at < date_trunc('month', CURRENT_DATE) THEN 1 END)::int AS orders_last_month

@@ -281,11 +281,18 @@ export const createOrderService = ({
     },
 
     /**
-     * Get order detail for authenticated user (Ownership enforced)
+     * Get order detail for authenticated user or guest confirmation
      */
-    async getUserOrderById(orderId, userId) {
-      const order = await orders.findUserOrderById(orderId, userId);
+    async getUserOrderById(orderId, userId = null) {
+      if (userId) {
+        const order = await orders.findUserOrderById(orderId, userId);
+        if (order) return order;
+      }
+      const order = await orders.findAdminOrderById(orderId);
       if (!order) {
+        throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
+      }
+      if (order.user_id && userId && order.user_id !== userId) {
         throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
       }
       return order;

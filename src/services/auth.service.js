@@ -8,8 +8,24 @@ import { emailService } from "./email.service.js";
 import { cartRepository } from "../repositories/cart.repository.js";
 import { withTransaction } from "../config/database.js";
 import { getConfig } from "../config/env.js";
+import { OAuth2Client } from "google-auth-library";
+import axios from "axios";
 
 const config = getConfig();
+const googleClient = new OAuth2Client(config.googleClientId);
+const defaultGoogleVerifier = async (accessToken) => {
+  if (!config.googleClientId) throw new AppError(503, "GOOGLE_AUTH_UNAVAILABLE", "Đăng nhập Google chưa được cấu hình");
+  try {
+    const token = await googleClient.getTokenInfo(accessToken);
+    if (token.aud !== config.googleClientId) throw new Error("Invalid audience");
+    const { data } = await axios.get("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    return data;
+  } catch {
+    throw unauthorized("GOOGLE_TOKEN_INVALID", "Google credential không hợp lệ hoặc đã hết hạn");
+  }
+};
 
 export const safeUser = ({ password, ...user }) => user;
 
@@ -22,6 +38,7 @@ export const createAuthService = ({
   emails = emailService,
   carts = cartRepository,
   otpGenerator = defaultOtpGenerator,
+  verifyGoogleToken = defaultGoogleVerifier,
   tokenOptions = { accessSecret: config.jwtSecret, accessExpiresIn: config.jwtExpiresIn, refreshTtlMs: config.refreshTtlMs },
   transaction = withTransaction,
 } = {}) => {
@@ -126,6 +143,25 @@ export const createAuthService = ({
       };
     },
 
+    async googleLogin(input, context = {}) {
+      const profile = await verifyGoogleToken(input.access_token);
+      if (!profile?.email || profile.email_verified !== true) {
+        throw unauthorized("GOOGLE_EMAIL_UNVERIFIED", "Email Google chưa được xác minh");
+      }
+
+      const email = profile.email.trim().toLowerCase();
+      let user = await users.findByEmail(email);
+      let isNewUser = false;
+      if (!user) {
+        user = await users.createFromOtp({ email, fullName: profile.name || null, urlImage: profile.picture || null });
+        isNewUser = true;
+      } else {
+        assertActive(user);
+      }
+
+      return { is_new_user: isNewUser, ...(await mergeAndIssue(user, input, context)) };
+    },
+
     /**
      * Refresh access token
      */
@@ -165,8 +201,8 @@ const defaultAuthService = createAuthService();
 export const {
   requestOtp,
   verifyOtp,
+  googleLogin,
   refresh,
   logout,
   me,
 } = defaultAuthService;
-

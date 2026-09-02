@@ -12,6 +12,25 @@ export const cartRepository = {
 
   async create(owner, client) {
     const db = client || pool;
+    if (owner.type === "guest" && owner.guestToken) {
+      const existing = await db.query(
+        `SELECT cart_id, user_id, guest_token, status_cart, created_at, updated_at
+         FROM cart WHERE guest_token = $1 LIMIT 1`,
+        [owner.guestToken],
+      );
+      if (existing.rows[0]) {
+        const reactivated = await db.query(
+          `UPDATE cart SET status_cart = 'active', updated_at = NOW()
+           WHERE cart_id = $1
+           RETURNING cart_id, user_id, guest_token, status_cart, created_at, updated_at`,
+          [existing.rows[0].cart_id],
+        );
+        if (existing.rows[0].status_cart !== "active") {
+          await db.query(`DELETE FROM cart_item WHERE cart_id = $1`, [existing.rows[0].cart_id]);
+        }
+        return reactivated.rows[0];
+      }
+    }
     const values = owner.type === "user" ? [owner.userId, null] : [null, owner.guestToken];
     const { rows } = await db.query(
       `INSERT INTO cart (user_id,guest_token,status_cart,created_at,updated_at)
@@ -119,7 +138,7 @@ export const cartRepository = {
     const guestResult = await db.query(
       `SELECT cart_id FROM cart WHERE guest_token=$1 AND user_id IS NULL AND status_cart='active' FOR UPDATE`, [guestToken],
     );
-    if (!guestResult.rowCount) throw new AppError(404, "GUEST_CART_NOT_FOUND", "Không tìm thấy guest cart");
+    if (!guestResult.rowCount) return null;
     const guestCartId = guestResult.rows[0].cart_id;
     let userResult = await db.query(
       `SELECT cart_id FROM cart WHERE user_id=$1 AND status_cart='active' FOR UPDATE`, [userId],
@@ -149,7 +168,9 @@ export const cartRepository = {
         [userCartId, item.product_variant_id, item.quantity_cart_item],
       );
     }
-    await db.query(`UPDATE cart SET status_cart='abandoned',guest_token=NULL,updated_at=NOW() WHERE cart_id=$1`, [guestCartId]);
+    // Delete moved items from guest cart and mark it abandoned without nulling guest_token (preserves ck_cart_exactly_one_owner)
+    await db.query(`DELETE FROM cart_item WHERE cart_id=$1`, [guestCartId]);
+    await db.query(`UPDATE cart SET status_cart='abandoned',updated_at=NOW() WHERE cart_id=$1`, [guestCartId]);
     return userCartId;
   },
 

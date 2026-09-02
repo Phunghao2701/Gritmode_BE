@@ -126,13 +126,13 @@ export const productVariantRepository = {
     }));
   },
 
-  async create(productId, { sku, price }, client) {
+  async create(productId, { sku, price, sale_price: salePrice = null, sale_start_at: saleStartAt = null, sale_end_at: saleEndAt = null }, client) {
     const query = `
-      INSERT INTO product_variant (product_id, sku, price, created_at, updated_at)
-      VALUES ($1, $2, $3, NOW(), NOW())
-      RETURNING product_variant_id, product_id, sku, price::float AS price, created_at, updated_at
+      INSERT INTO product_variant (product_id, sku, price, sale_price, sale_start_at, sale_end_at, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+      RETURNING product_variant_id, product_id, sku, price::float AS price, sale_price::float AS sale_price, sale_start_at, sale_end_at, created_at, updated_at
     `;
-    const { rows } = await runner(client).query(query, [productId, sku.trim().toUpperCase(), price]);
+    const { rows } = await runner(client).query(query, [productId, sku.trim().toUpperCase(), price, salePrice, saleStartAt, saleEndAt]);
     return rows[0];
   },
 
@@ -169,6 +169,18 @@ export const productVariantRepository = {
       sets.push(`price = $${idx++}`);
       values.push(data.price);
     }
+    if (data.sale_price !== undefined) {
+      sets.push(`sale_price = $${idx++}`);
+      values.push(data.sale_price);
+    }
+    if (data.sale_start_at !== undefined) {
+      sets.push(`sale_start_at = $${idx++}`);
+      values.push(data.sale_start_at);
+    }
+    if (data.sale_end_at !== undefined) {
+      sets.push(`sale_end_at = $${idx++}`);
+      values.push(data.sale_end_at);
+    }
     sets.push(`updated_at = NOW()`);
     values.push(variantId);
 
@@ -176,7 +188,7 @@ export const productVariantRepository = {
       UPDATE product_variant
       SET ${sets.join(", ")}
       WHERE product_variant_id = $${idx}
-      RETURNING product_variant_id, product_id, sku, price::float AS price, created_at, updated_at
+      RETURNING product_variant_id, product_id, sku, price::float AS price, sale_price::float AS sale_price, sale_start_at, sale_end_at, created_at, updated_at
     `;
     const { rows } = await runner(client).query(query, values);
     return rows[0] || null;

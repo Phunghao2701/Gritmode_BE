@@ -1,3 +1,5 @@
+import { AppError } from "../errors/app-error.js";
+
 const positiveInteger = (value) => Number.isInteger(Number(value)) && Number(value) > 0;
 
 export const validateAddCartItem = (input = {}) => {
@@ -54,11 +56,7 @@ export const validateUpdateCartItem = (input = {}) => {
 
 export const validateCartItemId = (value) => {
   if (!positiveInteger(value)) {
-    const error = new Error("cartItemId phải là số nguyên dương");
-    error.statusCode = 400;
-    error.code = "VALIDATION_ERROR";
-    error.isOperational = true;
-    throw error;
+    throw new AppError(400, "VALIDATION_ERROR", "cartItemId phải là số nguyên dương");
   }
   return Number(value);
 };

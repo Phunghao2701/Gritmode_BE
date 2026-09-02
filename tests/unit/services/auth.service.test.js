@@ -316,6 +316,50 @@ describe("auth service (Passwordless Email OTP)", () => {
   });
 
   // ── refresh ──────────────────────────────────────────────────────────────
+  describe("googleLogin", () => {
+    test("verifies Google identity and reuses the shared session pipeline", async () => {
+      let createdUserInput;
+      const service = createAuthService({
+        verifyGoogleToken: async () => ({
+          email: "New.User@Example.com",
+          email_verified: true,
+          name: "New User",
+          picture: "https://example.com/avatar.jpg",
+        }),
+        users: {
+          findByEmail: async () => null,
+          createFromOtp: async (input) => {
+            createdUserInput = input;
+            return { ...baseUser, email: input.email, full_name: input.fullName, url_image: input.urlImage };
+          },
+        },
+        sessions: { create: async () => ({ user_session_id: 13 }) },
+        tokenOptions: baseOptions,
+        transaction,
+      });
+
+      const result = await service.googleLogin({ access_token: "verified-google-access-token" });
+
+      assert.equal(result.is_new_user, true);
+      assert.equal(result.user.email, "new.user@example.com");
+      assert.equal(createdUserInput.fullName, "New User");
+      assert.ok(result.access_token);
+      assert.ok(result.refresh_token);
+    });
+
+    test("rejects an unverified Google email", async () => {
+      const service = createAuthService({
+        verifyGoogleToken: async () => ({ email: "user@example.com", email_verified: false }),
+        tokenOptions: baseOptions,
+        transaction,
+      });
+      await assert.rejects(
+        () => service.googleLogin({ access_token: "unverified-google-access-token" }),
+        (error) => error.statusCode === 401 && error.code === "GOOGLE_EMAIL_UNVERIFIED",
+      );
+    });
+  });
+
   describe("refresh", () => {
     test("rotates refresh token and issues new access token", async () => {
       let revokedSessionId = null;

@@ -56,6 +56,18 @@ export const createAuthController = ({ service = authService, config: cfg = conf
     }
   },
 
+  googleLogin: async (req, res, next) => {
+    try {
+      const result = await service.googleLogin(req.validatedBody || req.body, context(req));
+      res.cookie("refresh_token", result.refresh_token, cookieOptions(cfg));
+      const { refresh_token, ...data } = result;
+      return ok(res, data, { code: "AUTHENTICATED", message: "Đăng nhập Google thành công" });
+    } catch (error) {
+      logger.error("[auth] googleLogin error:", error);
+      next(error);
+    }
+  },
+
   /**
    * POST /api/v1/auth/refresh
    */
@@ -110,6 +122,7 @@ const defaultAuthController = createAuthController();
 
 export const requestOtp = defaultAuthController.requestOtp;
 export const verifyOtp = defaultAuthController.verifyOtp;
+export const googleLogin = defaultAuthController.googleLogin;
 export const refresh = defaultAuthController.refresh;
 export const logout = defaultAuthController.logout;
 export const me = defaultAuthController.me;

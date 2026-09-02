@@ -140,6 +140,14 @@ describe("authentication HTTP contract (Passwordless Email OTP)", () => {
   });
 
   // ── POST /auth/refresh ───────────────────────────────────────────────────
+  describe("POST /api/v1/auth/google", () => {
+    test("rejects a malformed Google credential before verification", async () => {
+      const res = await request(app).post("/api/v1/auth/google").send({ access_token: "short" });
+      assert.equal(res.status, 400);
+      assert.equal(res.body.code, "VALIDATION_ERROR");
+    });
+  });
+
   describe("POST /api/v1/auth/refresh", () => {
     test("refreshes token from cookie", async () => {
       const rawRefreshToken = "sample_refresh_token_123";

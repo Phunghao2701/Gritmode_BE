@@ -116,6 +116,19 @@ export const validateVerifyOtp = (input = {}) => {
     };
 };
 
+export const validateGoogleLogin = (input = {}) => {
+    const errors = [];
+    if (!input || typeof input !== 'object') {
+        return { ok: false, errors: [{ field: 'body', message: 'Dữ liệu không hợp lệ' }] };
+    }
+    if (!requiredString(input.access_token, 20, 10000)) {
+        errors.push({ field: 'access_token', message: 'Google access token không hợp lệ' });
+    }
+    const guestToken = requiredString(input.guest_token, 1, 255) ? input.guest_token.trim() : undefined;
+    if (errors.length) return { ok: false, errors };
+    return { ok: true, value: { access_token: input.access_token.trim(), guest_token: guestToken } };
+};
+
 export const validateRefreshToken = (input = {}) => {
     const errors = [];
     if (!input || typeof input !== 'object') {
@@ -366,6 +379,15 @@ export const validateProductQuery = (input = {}) => {
         }
     }
 
+    let categorySlug = undefined;
+    if (input.category !== undefined && input.category !== null && input.category !== '') {
+        if (typeof input.category !== 'string' || !input.category.trim()) {
+            errors.push({ field: 'category', message: 'Category slug phải là chuỗi hợp lệ' });
+        } else {
+            categorySlug = input.category.trim().toLowerCase();
+        }
+    }
+
     let collectionId = undefined;
     if (input.collection_id !== undefined && input.collection_id !== null && input.collection_id !== '') {
         const colId = Number.parseInt(input.collection_id, 10);
@@ -373,6 +395,15 @@ export const validateProductQuery = (input = {}) => {
             errors.push({ field: 'collection_id', message: 'Collection ID phải là số nguyên >= 1' });
         } else {
             collectionId = colId;
+        }
+    }
+
+    let collectionSlug = undefined;
+    if (input.collection !== undefined && input.collection !== null && input.collection !== '') {
+        if (typeof input.collection !== 'string' || !input.collection.trim()) {
+            errors.push({ field: 'collection', message: 'Collection slug phải là chuỗi hợp lệ' });
+        } else {
+            collectionSlug = input.collection.trim().toLowerCase();
         }
     }
 
@@ -428,7 +459,9 @@ export const validateProductQuery = (input = {}) => {
             limit,
             search,
             category_id: categoryId,
+            category_slug: categorySlug,
             collection_id: collectionId,
+            collection_slug: collectionSlug,
             min_price: minPrice,
             max_price: maxPrice,
             sort,
@@ -535,6 +568,12 @@ export const validateCreateFullProduct = (input = {}) => {
             if (!Number.isSafeInteger(quantityStock) || quantityStock < 0) {
                 errors.push({ field: `${field}.quantity_stock`, message: 'quantity_stock phải là số nguyên >= 0' });
             }
+            const salePrice = variant?.sale_price === undefined || variant?.sale_price === null || variant?.sale_price === ''
+                ? null
+                : Number(variant.sale_price);
+            if (salePrice !== null && (!Number.isSafeInteger(salePrice) || salePrice < 0)) {
+                errors.push({ field: `${field}.sale_price`, message: 'sale_price phải là số nguyên >= 0 hoặc null' });
+            }
 
             const optionValues = {};
             if (!variant?.option_values || Array.isArray(variant.option_values) || typeof variant.option_values !== 'object') {
@@ -559,7 +598,15 @@ export const validateCreateFullProduct = (input = {}) => {
                 errors.push({ field: `${field}.option_values`, message: 'Tổ hợp option của variant không được trùng nhau' });
             }
             combinationKeys.add(combinationKey);
-            normalizedVariants.push({ sku, price, quantity_stock: quantityStock, option_values: optionValues });
+            normalizedVariants.push({
+                sku,
+                price,
+                sale_price: salePrice,
+                sale_start_at: variant?.sale_start_at || null,
+                sale_end_at: variant?.sale_end_at || null,
+                quantity_stock: quantityStock,
+                option_values: optionValues,
+            });
         });
     }
 

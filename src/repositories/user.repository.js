@@ -18,11 +18,11 @@ export const userRepository = {
     const { rows } = await runner(client).query(`SELECT ${projection} FROM "user" WHERE user_id = $1`, [userId]);
     return rows[0] || null;
   },
-  async createFromOtp({ email, fullName = null, role = "customer", status = "active" }, client) {
+  async createFromOtp({ email, fullName = null, urlImage = null, role = "customer", status = "active" }, client) {
     const { rows } = await runner(client).query(
-      `INSERT INTO "user" (user_id,email,status,role,full_name,email_verified_at,created_at,updated_at)
-       VALUES (gen_random_uuid(),$1,$2,$3,$4,NOW(),NOW(),NOW()) RETURNING ${projection}`,
-      [email.trim().toLowerCase(), status, role, fullName],
+      `INSERT INTO "user" (user_id,email,status,role,full_name,url_image,email_verified_at,created_at,updated_at)
+       VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,NOW(),NOW(),NOW()) RETURNING ${projection}`,
+      [email.trim().toLowerCase(), status, role, fullName, urlImage],
     );
     return rows[0];
   },

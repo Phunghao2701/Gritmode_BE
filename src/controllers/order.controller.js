@@ -47,7 +47,7 @@ export const createOrderController = ({
   getMyOrderById: async (req, res, next) => {
     try {
       const orderId = req.validatedParams ? req.validatedParams.orderId : req.params.orderId;
-      const result = await orders.getUserOrderById(orderId, req.user.user_id);
+      const result = await orders.getUserOrderById(orderId, req.user?.user_id || null);
       return ok(res, result, { message: "Lấy chi tiết đơn hàng thành công" });
     } catch (error) {
       logger.error("[order] getMyOrderById error:", error);

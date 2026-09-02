@@ -284,7 +284,7 @@ router.post(
  */
 router.get(
   "/:orderId",
-  requireAuth,
+  optionalAuth,
   validateParam("orderId", validatePositiveId),
   getMyOrderById,
 );
