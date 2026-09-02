@@ -14,7 +14,9 @@ import orderRouter from "./order.route.js";
 import adminOrderRouter from "./admin-order.route.js";
 import adminUserRouter from "./admin-user.route.js";
 import adminAuditLogRouter from "./admin-audit-log.route.js";
+import adminDashboardRouter from "./admin-dashboard.route.js";
 import paymentRouter from "./payment.route.js";
+import uploadRouter from "./upload.route.js";
 
 const router = Router();
 router.get("/health", (req, res) => res.json({ success: true, code: "HEALTHY", message: "OK", data: { status: "up" } }));
@@ -37,7 +39,8 @@ router.use("/orders", orderRouter);
 router.use("/admin", adminOrderRouter);
 router.use("/admin/users", adminUserRouter);
 router.use("/admin/audit-logs", adminAuditLogRouter);
+router.use("/admin/dashboard", adminDashboardRouter);
+router.use("/admin/uploads", uploadRouter);
 router.use("/payments", paymentRouter);
 
 export default router;
-

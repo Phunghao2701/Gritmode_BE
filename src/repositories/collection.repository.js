@@ -7,6 +7,7 @@ export const collectionRepository = {
     const query = `
       SELECT 
         c.collection_id,
+        c.parent_collection_id,
         c.name_collection,
         COALESCE(NULLIF(c.slug_collection, ''), LOWER(REPLACE(c.name_collection, ' ', '-'))) AS slug_collection,
         c.description_collection,
@@ -31,6 +32,7 @@ export const collectionRepository = {
       const fallbackQuery = `
         SELECT 
           c.collection_id,
+          NULL::bigint AS parent_collection_id,
           c.name_collection,
           LOWER(REPLACE(c.name_collection, ' ', '-')) AS slug_collection,
           c.description_collection,
@@ -53,6 +55,7 @@ export const collectionRepository = {
     const query = `
       SELECT 
         c.collection_id,
+        c.parent_collection_id,
         c.name_collection,
         COALESCE(NULLIF(c.slug_collection, ''), LOWER(REPLACE(c.name_collection, ' ', '-'))) AS slug_collection,
         c.description_collection,
@@ -78,6 +81,7 @@ export const collectionRepository = {
       const fallbackQuery = `
         SELECT 
           c.collection_id,
+          NULL::bigint AS parent_collection_id,
           c.name_collection,
           LOWER(REPLACE(c.name_collection, ' ', '-')) AS slug_collection,
           c.description_collection,
@@ -105,6 +109,7 @@ export const collectionRepository = {
     const query = `
       SELECT 
         c.collection_id,
+        c.parent_collection_id,
         c.name_collection,
         COALESCE(NULLIF(c.slug_collection, ''), LOWER(REPLACE(c.name_collection, ' ', '-'))) AS slug_collection,
         c.description_collection,
@@ -130,6 +135,7 @@ export const collectionRepository = {
       const fallbackQuery = `
         SELECT 
           c.collection_id,
+          NULL::bigint AS parent_collection_id,
           c.name_collection,
           LOWER(REPLACE(c.name_collection, ' ', '-')) AS slug_collection,
           c.description_collection,
@@ -157,6 +163,7 @@ export const collectionRepository = {
     const query = `
       SELECT 
         c.collection_id,
+        c.parent_collection_id,
         c.name_collection,
         COALESCE(NULLIF(c.slug_collection, ''), LOWER(REPLACE(c.name_collection, ' ', '-'))) AS slug_collection,
         c.description_collection,
@@ -177,6 +184,7 @@ export const collectionRepository = {
       const fallbackQuery = `
         SELECT 
           c.collection_id,
+          NULL::bigint AS parent_collection_id,
           c.name_collection,
           LOWER(REPLACE(c.name_collection, ' ', '-')) AS slug_collection,
           c.description_collection,
@@ -198,6 +206,7 @@ export const collectionRepository = {
   async create(data, client) {
     const query = `
       INSERT INTO collection (
+        parent_collection_id,
         name_collection,
         slug_collection,
         description_collection,
@@ -207,11 +216,12 @@ export const collectionRepository = {
         end_at,
         created_at,
         updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
       RETURNING *
     `;
     try {
       const { rows } = await runner(client).query(query, [
+        data.parent_collection_id || null,
         data.name_collection,
         data.slug_collection || null,
         data.description_collection || null,
@@ -252,6 +262,10 @@ export const collectionRepository = {
     if (data.name_collection !== undefined) {
       sets.push(`name_collection = $${idx++}`);
       values.push(data.name_collection);
+    }
+    if (data.parent_collection_id !== undefined) {
+      sets.push(`parent_collection_id = $${idx++}`);
+      values.push(data.parent_collection_id || null);
     }
     if (data.slug_collection !== undefined) {
       sets.push(`slug_collection = $${idx++}`);

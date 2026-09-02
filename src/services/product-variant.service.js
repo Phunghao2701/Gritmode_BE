@@ -14,6 +14,13 @@ export const createProductVariantService = ({
 } = {}) => {
   const validateOptionValuesForProduct = async (productId, optionValueIds, currentVariantId = null, client) => {
     const productOptions = await options.listByProduct(productId, client);
+    if ((!productOptions || productOptions.length === 0) && optionValueIds.length === 0) {
+      const existingCombinations = await variants.findExistingCombinations(productId, client);
+      if (existingCombinations.some((comb) => !currentVariantId || Number(comb.product_variant_id) !== Number(currentVariantId))) {
+        throw conflict("VARIANT_COMBINATION_EXISTS", "Sản phẩm single-SKU chỉ được có một variant mặc định");
+      }
+      return;
+    }
     if (!productOptions || productOptions.length === 0) {
       throw badRequest("NO_PRODUCT_OPTIONS", "Sản phẩm chưa có tùy chọn (Option) nào để tạo biến thể");
     }

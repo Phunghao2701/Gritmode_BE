@@ -1,6 +1,7 @@
 import nodemailer from "nodemailer";
 import { AppError } from "../errors/app-error.js";
 import logger from "../utils/logger.js";
+import { orderConfirmationText, renderOrderConfirmationEmail } from "../templates/order-confirmation.template.js";
 
 const REQUIRED_EMAIL_ENV = ["EMAIL_USER", "CLIENT_ID", "CLIENT_SECRET", "REFRESH_TOKEN"];
 
@@ -69,8 +70,30 @@ export const createEmailService = ({
         throw new AppError(502, "EMAIL_DELIVERY_FAILED", "Không thể gửi email OTP");
       }
     },
+
+    async sendOrderConfirmationEmail(order) {
+      try {
+        const result = await getTransport().sendMail({
+          from: `"GRITMODE" <${env.EMAIL_USER}>`,
+          to: order.email_order,
+          subject: `GRITMODE | Xác nhận đơn hàng #${order.order_code}`,
+          text: orderConfirmationText(order),
+          html: renderOrderConfirmationEmail(order, {
+            frontendUrl: env.FRONTEND_URL,
+            supportEmail: env.SUPPORT_EMAIL || env.EMAIL_USER,
+            hotline: env.SUPPORT_HOTLINE,
+          }),
+        });
+        logger.info(`[email] Order confirmation sent for ${order.order_code}`);
+        return { success: true, message_id: result.messageId };
+      } catch (error) {
+        logger.error(`[email] Failed to send order confirmation for ${order.order_code}`, error);
+        if (error instanceof AppError) throw error;
+        throw new AppError(502, "EMAIL_DELIVERY_FAILED", "Không thể gửi email xác nhận đơn hàng");
+      }
+    },
   };
 };
 
 export const emailService = createEmailService();
-export const { sendOtpEmail } = emailService;
+export const { sendOtpEmail, sendOrderConfirmationEmail } = emailService;

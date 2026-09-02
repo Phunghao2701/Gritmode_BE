@@ -112,9 +112,10 @@ export const productVariantRepository = {
     const query = `
       SELECT 
         pv.product_variant_id,
-        ARRAY_AGG(pvov.product_option_value_id ORDER BY pvov.product_option_value_id ASC) AS option_value_ids
+        COALESCE(ARRAY_AGG(pvov.product_option_value_id ORDER BY pvov.product_option_value_id ASC)
+          FILTER (WHERE pvov.product_option_value_id IS NOT NULL), '{}') AS option_value_ids
       FROM product_variant pv
-      JOIN product_variant_option_value pvov ON pv.product_variant_id = pvov.product_variant_id
+      LEFT JOIN product_variant_option_value pvov ON pv.product_variant_id = pvov.product_variant_id
       WHERE pv.product_id = $1
       GROUP BY pv.product_variant_id
     `;
@@ -187,15 +188,9 @@ export const productVariantRepository = {
   },
 
   async hasReferences(variantId, client) {
-    const query = `
-      SELECT (
-        EXISTS (
-          SELECT 1 FROM information_schema.tables WHERE table_name = 'cart_item'
-        ) AND EXISTS (
-          SELECT 1 FROM cart_item WHERE product_variant_id = $1
-        )
-      ) AS has_ref
-    `;
+    const query = `SELECT
+      EXISTS (SELECT 1 FROM cart_item WHERE product_variant_id = $1)
+      OR EXISTS (SELECT 1 FROM order_item WHERE product_variant_id = $1) AS has_ref`;
     try {
       const { rows } = await runner(client).query(query, [variantId]);
       return Boolean(rows[0]?.has_ref ?? (Number(rows[0]?.count) > 0));

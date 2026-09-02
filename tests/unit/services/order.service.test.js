@@ -26,6 +26,7 @@ describe("order service", () => {
     let createdPayment = null;
     let reservedStock = [];
     let convertedCartId = null;
+    let emailedOrder = null;
 
     const service = createOrderService({
       carts: {
@@ -61,6 +62,7 @@ describe("order service", () => {
           return createdPayment;
         },
       },
+      emails: { sendOrderConfirmationEmail: async (order) => { emailedOrder = order; } },
       transaction,
     });
 
@@ -80,13 +82,16 @@ describe("order service", () => {
     assert.ok(result);
     assert.equal(result.order_id, 1001);
     assert.equal(result.subtotal_order, 1000000);
-    assert.equal(result.shipping_fee_order, 30000);
-    assert.equal(result.total_order, 1030000);
+    assert.equal(result.shipping_fee_order, 0);
+    assert.equal(result.total_order, 1000000);
     assert.equal(result.status_order, "pending");
     assert.equal(result.payment.payment_method, "cod");
     assert.equal(convertedCartId, 10);
     assert.equal(reservedStock.length, 1);
     assert.equal(reservedStock[0].quantity, 2);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(emailedOrder.order_code, result.order_code);
+    assert.equal(emailedOrder.items.length, 1);
   });
 
   test("creates order with payOS payment and returns payment url & qr", async () => {
@@ -184,8 +189,8 @@ describe("order service", () => {
     assert.ok(result);
     assert.equal(result.subtotal_order, 1000000);
     assert.equal(result.discount_order, 100000);
-    assert.equal(result.shipping_fee_order, 30000);
-    assert.equal(result.total_order, 930000);
+    assert.equal(result.shipping_fee_order, 0);
+    assert.equal(result.total_order, 900000);
     assert.equal(incrementedVoucherId, 5);
   });
 
@@ -244,4 +249,116 @@ describe("order service", () => {
       (err) => err.statusCode === 409 && err.code === "INSUFFICIENT_STOCK",
     );
   });
+
+  test("rejects user checkout with non-existent saved address", async () => {
+    const service = createOrderService({
+      carts: {
+        findActiveByOwner: async () => sampleCart,
+        getDetailedItems: async () => sampleCartItems,
+      },
+      inventories: {
+        lockStockByVariantId: async () => ({ quantity_available: 10 }),
+        reserveStock: async () => {},
+      },
+      addresses: {
+        findById: async () => null,
+      },
+      transaction,
+    });
+
+    await assert.rejects(
+      () => service.createOrder(
+        { payment_method: "cod", user_address_id: 999 },
+        { owner: { type: "user", userId: "u1" }, user: { user_id: "u1", email: "u1@test.com" } },
+      ),
+      (err) => err.statusCode === 404 && err.code === "ADDRESS_NOT_FOUND",
+    );
+  });
+
+  test("getUserOrderById and cancelUserOrder enforce ownership and state", async () => {
+    const service = createOrderService({
+      orders: {
+        findUserOrderById: async (id, uid) => {
+          if (id === 1 && uid === "u1") return { order_id: 1, user_id: "u1", status_order: "pending" };
+          if (id === 2 && uid === "u1") return { order_id: 2, user_id: "u1", status_order: "shipping" };
+          return null;
+        },
+        findOrderItems: async () => [],
+        updateOrderStatus: async () => ({ order_id: 1, status_order: "cancelled" }),
+      },
+      inventories: {
+        releaseReservedStock: async () => {},
+      },
+      payments: {
+        cancelPendingPaymentByOrderId: async () => {},
+      },
+      transaction,
+    });
+
+    // 404 on missing order
+    await assert.rejects(
+      () => service.getUserOrderById(999, "u1"),
+      (err) => err.statusCode === 404 && err.code === "ORDER_NOT_FOUND",
+    );
+
+    // Cancel rejects non-pending/confirmed order
+    await assert.rejects(
+      () => service.cancelUserOrder(2, "u1"),
+      (err) => err.statusCode === 409 && err.code === "ORDER_CANNOT_BE_CANCELLED",
+    );
+
+    // Cancel pending succeeds
+    const cancelled = await service.cancelUserOrder(1, "u1");
+    assert.equal(cancelled.order_id, 1);
+  });
+
+  test("lookupGuestOrder and cancelGuestOrder verify 3 fields and handle errors", async () => {
+    const service = createOrderService({
+      orders: {
+        findGuestOrder: async ({ orderCode, email, phone }) => {
+          if (orderCode === "G1" && email === "g@test.com" && phone === "0901234567") {
+            return { order_id: 10, order_code: "G1", status_order: "pending", items: [] };
+          }
+          if (orderCode === "G2") {
+            return { order_id: 20, order_code: "G2", status_order: "completed", items: [] };
+          }
+          return null;
+        },
+        updateOrderStatus: async () => ({ order_id: 10, status_order: "cancelled" }),
+      },
+      inventories: {
+        releaseReservedStock: async () => {},
+      },
+      payments: {
+        cancelPendingPaymentByOrderId: async () => {},
+      },
+      transaction,
+    });
+
+    const found = await service.lookupGuestOrder({ order_code: "G1", email: "g@test.com", phone: "0901234567" });
+    assert.equal(found.order_id, 10);
+
+    await assert.rejects(
+      () => service.lookupGuestOrder({ order_code: "G999", email: "x", phone: "y" }),
+      (err) => err.statusCode === 404 && err.code === "ORDER_NOT_FOUND",
+    );
+
+    // Cancel guest missing
+    await assert.rejects(
+      () => service.cancelGuestOrder("G999", { email: "x", phone: "y" }),
+      (err) => err.statusCode === 404 && err.code === "ORDER_NOT_FOUND",
+    );
+
+    // Cancel guest completed -> 409
+    await assert.rejects(
+      () => service.cancelGuestOrder("G2", { email: "g@test.com", phone: "0901234567" }),
+      (err) => err.statusCode === 409 && err.code === "ORDER_CANNOT_BE_CANCELLED",
+    );
+
+    // Cancel guest pending -> success
+    const cancelled = await service.cancelGuestOrder("G1", { email: "g@test.com", phone: "0901234567" });
+    assert.equal(cancelled.order_id, 10);
+    assert.equal(cancelled.status_order, "cancelled");
+  });
 });
+

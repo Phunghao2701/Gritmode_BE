@@ -1,7 +1,14 @@
 import { conflict, notFound, badRequest } from "../errors/app-error.js";
 import { paymentRepository } from "../repositories/payment.repository.js";
 import { orderRepository } from "../repositories/order.repository.js";
-import { generatePayOSOrderCode, verifyPayOSWebhookSignature } from "../utils/payos.js";
+import {
+  generatePayOSOrderCode,
+  verifyPayOSWebhookSignature,
+  callPayOSCreatePaymentLink,
+  getPayOSPaymentLinkInfo,
+} from "../utils/payos.js";
+import { emailService } from "./email.service.js";
+import logger from "../utils/logger.js";
 
 const VALID_COD_TRANSITIONS = {
   pending: ["paid", "cancelled"],
@@ -13,6 +20,7 @@ export const createPaymentService = ({
   payments = paymentRepository,
   orders = orderRepository,
   checksumKey = process.env.PAYOS_CHECKSUM_KEY,
+  emails = emailService,
 } = {}) => ({
   /**
    * Validate COD payment transition
@@ -144,8 +152,16 @@ export const createPaymentService = ({
     // Create new payOS payment attempt
     const payosOrderCode = generatePayOSOrderCode();
     const expiredAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
-    const checkoutUrl = `https://pay.payos.vn/web/${payosOrderCode}`;
-    const qrCode = `00020101021238540010A000000727012400069704220110${payosOrderCode}520459995303704540${order.total_order}5802VN62150811ORDER${order.order_id}6304`;
+
+    const payosResult = await callPayOSCreatePaymentLink({
+      orderCode: payosOrderCode,
+      amount: Number(order.total_order),
+      description: `ORDER${order.order_id}`,
+    });
+
+    const checkoutUrl = payosResult?.checkoutUrl || `https://pay.payos.vn/web/${payosOrderCode}`;
+    const qrCode = payosResult?.qrCode || `00020101021238540010A000000727012400069704220110${payosOrderCode}520459995303704540${order.total_order}5802VN62150811ORDER${order.order_id}6304`;
+    const paymentLinkId = payosResult?.paymentLinkId || `link_${payosOrderCode}`;
 
     return payments.createPayment(
       {
@@ -154,7 +170,7 @@ export const createPaymentService = ({
         status_payment: "pending",
         amount_payment: Number(order.total_order),
         payos_order_code: payosOrderCode,
-        payos_payment_link_id: `link_${payosOrderCode}`,
+        payos_payment_link_id: paymentLinkId,
         checkout_url: checkoutUrl,
         qr_code: qrCode,
         expired_at: expiredAt,
@@ -190,13 +206,28 @@ export const createPaymentService = ({
       return payment;
     }
 
-    return payments.markPayOSAsPaid(
+    if (orders?.updateOrderStatus) {
+      await orders.updateOrderStatus(payment.order_id, "confirmed", client);
+    }
+
+    const updated = await payments.markPayOSAsPaid(
       {
         paymentId: payment.payment_id,
         reference: data.reference || data.paymentLinkId || null,
       },
       client,
     );
+    const order = orders.findAdminOrderById
+      ? await orders.findAdminOrderById(payment.order_id, client)
+      : orders.findById
+        ? await orders.findById(payment.order_id, client)
+        : null;
+    if (order) {
+      void emails.sendOrderConfirmationEmail({ ...order, payment: updated }).catch((error) => {
+        logger.error(`[payment] Confirmation email failed for ${order.order_code}`, error);
+      });
+    }
+    return updated;
   },
 
   /**
@@ -212,9 +243,40 @@ export const createPaymentService = ({
       throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
     }
 
-    const payment = await payments.findByOrderId(orderId, client);
+    let payment = await payments.findByOrderId(orderId, client);
     if (!payment) {
       throw notFound("PAYMENT_NOT_FOUND", "Không tìm thấy thông tin thanh toán");
+    }
+
+    // Auto-sync with payOS if still pending (Supports local testing without Webhook)
+    if (
+      payment.payment_method === "payos" &&
+      payment.status_payment === "pending" &&
+      payment.payos_order_code
+    ) {
+      try {
+        const payosInfo = await getPayOSPaymentLinkInfo(payment.payos_order_code);
+        if (
+          payosInfo &&
+          (payosInfo.status === "PAID" || Number(payosInfo.amountPaid) >= Number(payment.amount_payment))
+        ) {
+          const updated = await payments.markPayOSAsPaid(
+            {
+              paymentId: payment.payment_id,
+              reference: payosInfo.transactions?.[0]?.reference || payosInfo.id || null,
+            },
+            client,
+          );
+          if (orders?.updateOrderStatus) {
+            await orders.updateOrderStatus(order.order_id, "confirmed", client);
+          }
+          if (updated) {
+            payment = updated;
+          }
+        }
+      } catch (syncErr) {
+        // Fallback gracefully to current DB state
+      }
     }
 
     return payment;
@@ -256,8 +318,16 @@ export const createPaymentService = ({
     if (paymentMethod === "payos") {
       const payosOrderCode = generatePayOSOrderCode();
       const expiredAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
-      const checkoutUrl = `https://pay.payos.vn/web/${payosOrderCode}`;
-      const qrCode = `00020101021238540010A000000727012400069704220110${payosOrderCode}520459995303704540${total}5802VN62150811ORDER${order.order_id}6304`;
+
+      const payosResult = await callPayOSCreatePaymentLink({
+        orderCode: payosOrderCode,
+        amount: Number(total),
+        description: `ORDER${order.order_id}`,
+      });
+
+      const checkoutUrl = payosResult?.checkoutUrl || `https://pay.payos.vn/web/${payosOrderCode}`;
+      const qrCode = payosResult?.qrCode || `00020101021238540010A000000727012400069704220110${payosOrderCode}520459995303704540${total}5802VN62150811ORDER${order.order_id}6304`;
+      const paymentLinkId = payosResult?.paymentLinkId || `link_${payosOrderCode}`;
 
       return payments.createPayment(
         {
@@ -266,7 +336,7 @@ export const createPaymentService = ({
           status_payment: "pending",
           amount_payment: total,
           payos_order_code: payosOrderCode,
-          payos_payment_link_id: `link_${payosOrderCode}`,
+          payos_payment_link_id: paymentLinkId,
           checkout_url: checkoutUrl,
           qr_code: qrCode,
           expired_at: expiredAt,

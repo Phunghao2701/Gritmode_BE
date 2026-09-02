@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, mock, test } from "node:test";
 import assert from "node:assert/strict";
 import request from "supertest";
+import axios from "axios";
 import pool from "../../src/config/database.js";
 import { createAccessToken } from "../../src/utils/tokens.js";
 import { userRepository } from "../../src/repositories/user.repository.js";
@@ -33,6 +34,15 @@ describe("order checkout HTTP contract", () => {
       role: "customer",
       status: "active",
       phone: "0901234567",
+    }));
+    mock.method(axios, "post", async () => ({
+      data: {
+        code: "00",
+        data: {
+          checkoutUrl: "https://pay.payos.vn/100",
+          qrCode: "QR100",
+        },
+      },
     }));
   });
 

@@ -1,6 +1,9 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { createUserSessionService } from "../../../src/services/user-session.service.js";
+import {
+  createUserSessionService,
+  formatSession,
+} from "../../../src/services/user-session.service.js";
 
 describe("user session service", () => {
   const userId = "00000000-0000-4000-8000-000000000001";
@@ -38,6 +41,16 @@ describe("user session service", () => {
     revoked_at: new Date("2026-08-29T10:00:00.000Z"), // revoked
     created_at: new Date("2026-08-27T10:00:00.000Z"),
   };
+
+  test("formatSession handles null input and maps fields correctly", () => {
+    assert.equal(formatSession(null), null);
+
+    const formatted = formatSession(sampleSession1, 1);
+    assert.equal(formatted.user_session_id, 1);
+    assert.equal(formatted.is_current, true);
+    assert.equal(formatted.is_active, true);
+    assert.equal(formatted.refresh_token_hash, undefined);
+  });
 
   test("getUserSessions returns sessions with is_current, is_active, and without token hash", async () => {
     const service = createUserSessionService({
@@ -132,6 +145,9 @@ describe("user session service", () => {
       },
     });
 
+    const empty = await service.findSessionByRefreshToken(null);
+    assert.equal(empty, null);
+
     const session = await service.findSessionByRefreshToken("raw-refresh-token");
     assert.ok(session);
     assert.ok(capturedHash);
@@ -170,10 +186,13 @@ describe("user session service", () => {
 
   test("helpers isSessionExpired, isSessionRevoked, isSessionActive", () => {
     const service = createUserSessionService();
+    assert.equal(service.isSessionExpired(null), true);
     assert.equal(service.isSessionExpired(sampleSession1), false);
     assert.equal(service.isSessionExpired(sampleSession2), true);
+    assert.equal(service.isSessionRevoked(null), true);
     assert.equal(service.isSessionRevoked(sampleSession1), false);
     assert.equal(service.isSessionRevoked(sampleSession3), true);
+    assert.equal(service.isSessionActive(null), false);
     assert.equal(service.isSessionActive(sampleSession1), true);
     assert.equal(service.isSessionActive(sampleSession2), false);
     assert.equal(service.isSessionActive(sampleSession3), false);

@@ -78,7 +78,12 @@ export const cartRepository = {
 
   async getDetailedItems(cartId, client) {
     const { rows } = await (client || pool).query(
-      `SELECT ci.cart_item_id,p.product_id,pv.product_variant_id,p.name_product,pv.sku,pv.price,
+      `SELECT ci.cart_item_id,p.product_id,pv.product_variant_id,p.name_product,pv.sku,
+              pv.price AS original_price,
+              CASE WHEN pv.sale_price IS NOT NULL AND pv.sale_price < pv.price
+                AND (pv.sale_start_at IS NULL OR pv.sale_start_at <= NOW())
+                AND (pv.sale_end_at IS NULL OR pv.sale_end_at > NOW())
+                THEN pv.sale_price ELSE pv.price END AS price,
               ci.quantity_cart_item AS quantity,
               COALESCE(inv.quantity_stock-inv.quantity_reserved,0) AS quantity_available,
               opts.variant,img.url_product_image AS image
@@ -157,4 +162,3 @@ export const cartRepository = {
     return rows[0] || null;
   },
 };
-

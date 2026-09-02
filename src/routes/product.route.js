@@ -1,8 +1,14 @@
 import { Router } from "express";
 import {
   getProducts,
+  getAdminProducts,
   getProductById,
+  getAdminProductById,
+  publishProduct,
+  archiveProduct,
   createProduct,
+  createFullProduct,
+  updateFullProduct,
   updateProduct,
   deleteProduct,
 } from "../controllers/product.controller.js";
@@ -11,6 +17,8 @@ import { validateBody, validateQuery } from "../middlewares/validate.middleware.
 import {
   validateProductQuery,
   validateCreateProduct,
+  validateCreateFullProduct,
+  validateUpdateFullProduct,
   validateUpdateProduct,
 } from "../utils/validation.js";
 
@@ -93,6 +101,20 @@ publicRouter.get("/:productId", getProductById);
 // Admin product routes
 const adminRouter = Router();
 adminRouter.use(requireAuth, requireRole("admin"));
+/**
+ * @swagger
+ * /admin/products:
+ *   get:
+ *     summary: Danh sách tất cả Product cho Admin, gồm draft/active/archived
+ *     tags: [Admin Products]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: query, name: status_product, schema: { type: string, enum: [draft, active, archived] } }
+ *       - { in: query, name: search, schema: { type: string } }
+ *     responses:
+ *       200: { description: Admin product list }
+ */
+adminRouter.get("/", validateQuery(validateProductQuery), getAdminProducts);
 
 /**
  * @swagger
@@ -116,6 +138,10 @@ adminRouter.use(requireAuth, requireRole("admin"));
  *                 type: string
  *               description:
  *                 type: string
+ *               status_product:
+ *                 type: string
+ *                 enum: [draft]
+ *                 readOnly: true
  *     responses:
  *       201:
  *         description: Tạo sản phẩm thành công
@@ -127,6 +153,110 @@ adminRouter.use(requireAuth, requireRole("admin"));
  *         description: Không có quyền truy cập (Admin only)
  */
 adminRouter.post("/", validateBody(validateCreateProduct), createProduct);
+
+/**
+ * @swagger
+ * /admin/products/full:
+ *   post:
+ *     summary: Tạo đầy đủ sản phẩm trong một transaction (Admin)
+ *     tags: [Admin Products]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name_product, options, variants]
+ *             properties:
+ *               name_product: { type: string }
+ *               description: { type: string, nullable: true }
+ *               options:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [name_option, values]
+ *                   properties:
+ *                     name_option: { type: string, example: Color }
+ *                     values: { type: array, items: { type: string }, example: [Black, White] }
+ *               variants:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [sku, price, quantity_stock, option_values]
+ *                   properties:
+ *                     sku: { type: string }
+ *                     price: { type: integer, minimum: 0 }
+ *                     quantity_stock: { type: integer, minimum: 0 }
+ *                     option_values: { type: object, additionalProperties: { type: string }, example: { Color: Black, Size: M } }
+ *               category_ids: { type: array, items: { type: integer } }
+ *               primary_category_id: { type: integer, nullable: true }
+ *               collection_ids: { type: array, items: { type: integer } }
+ *               images:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [url_product_image]
+ *                   properties:
+ *                     url_product_image: { type: string }
+ *                     alt_product_image: { type: string, nullable: true }
+ *                     position_product_image: { type: integer, minimum: 0 }
+ *                     option_value:
+ *                       type: object
+ *                       nullable: true
+ *                       properties:
+ *                         option_name: { type: string, example: Color }
+ *                         value: { type: string, example: Black }
+ *     responses:
+ *       201: { description: Tạo toàn bộ sản phẩm thành công }
+ *       400: { description: Dữ liệu không hợp lệ }
+ *       404: { description: Danh mục không tồn tại }
+ *       409: { description: SKU đã tồn tại }
+ */
+adminRouter.post("/full", validateBody(validateCreateFullProduct), createFullProduct);
+adminRouter.put("/:productId/full", validateBody(validateUpdateFullProduct), updateFullProduct);
+/**
+ * @swagger
+ * /admin/products/{productId}/publish:
+ *   patch:
+ *     summary: Validate completeness và publish Product Draft
+ *     tags: [Admin Products]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: productId, required: true, schema: { type: integer } }
+ *     responses:
+ *       200: { description: Product active }
+ *       409: { description: Product chưa đầy đủ hoặc sai trạng thái }
+ */
+adminRouter.patch("/:productId/publish", publishProduct);
+/**
+ * @swagger
+ * /admin/products/{productId}/archive:
+ *   patch:
+ *     summary: Archive Product Active
+ *     tags: [Admin Products]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: productId, required: true, schema: { type: integer } }
+ *     responses:
+ *       200: { description: Product archived }
+ *       409: { description: Product không ở trạng thái active }
+ */
+adminRouter.patch("/:productId/archive", archiveProduct);
+/**
+ * @swagger
+ * /admin/products/{productId}:
+ *   get:
+ *     summary: Chi tiết Product đầy đủ cho Admin Edit
+ *     tags: [Admin Products]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - { in: path, name: productId, required: true, schema: { type: integer } }
+ *     responses:
+ *       200: { description: Product với options, variants, inventory, images, categories và collections }
+ */
+adminRouter.get("/:productId", getAdminProductById);
 
 /**
  * @swagger

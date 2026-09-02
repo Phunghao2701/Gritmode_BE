@@ -6,13 +6,26 @@ import logger from "../utils/logger.js";
 const config = getConfig();
 
 const context = (req) => ({ userAgent: req.get("user-agent"), ipAddress: req.ip });
-export const cookieOptions = (cfg = config) => ({
-  httpOnly: true,
-  secure: cfg.nodeEnv === "production",
-  sameSite: "lax",
-  maxAge: cfg.refreshTtlMs,
-  path: "/api/v1",
-});
+export const cookieOptions = (cfg = config) => {
+  const isProd = cfg.nodeEnv === "production" && !cfg.frontendUrl?.includes("localhost");
+  return {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
+    maxAge: cfg.refreshTtlMs,
+    path: "/api/v1",
+  };
+};
+
+export const clearCookieOptions = (cfg = config) => {
+  const isProd = cfg.nodeEnv === "production" && !cfg.frontendUrl?.includes("localhost");
+  return {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
+    path: "/api/v1",
+  };
+};
 
 export const createAuthController = ({ service = authService, config: cfg = config } = {}) => ({
   /**
@@ -54,7 +67,12 @@ export const createAuthController = ({ service = authService, config: cfg = conf
       const { refresh_token, ...data } = result;
       return ok(res, data, { code: "TOKEN_REFRESHED", message: "Làm mới token thành công" });
     } catch (error) {
-      logger.error("[auth] refresh error:", error);
+      if (error?.statusCode === 401) {
+        res.clearCookie("refresh_token", clearCookieOptions(cfg));
+        logger.warn(`[auth] refresh rejected: ${error.code}`);
+      } else {
+        logger.error("[auth] refresh error:", error);
+      }
       next(error);
     }
   },
@@ -66,7 +84,7 @@ export const createAuthController = ({ service = authService, config: cfg = conf
     try {
       const rawToken = req.cookies?.refresh_token;
       await service.logout(rawToken);
-      res.clearCookie("refresh_token", cookieOptions(cfg));
+      res.clearCookie("refresh_token", clearCookieOptions(cfg));
       return ok(res, null, { code: "LOGGED_OUT", message: "Đăng xuất thành công" });
     } catch (error) {
       logger.error("[auth] logout error:", error);

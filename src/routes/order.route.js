@@ -31,9 +31,12 @@ const validateCheckoutMiddleware = (req, res, next) => {
   const isAuthenticated = Boolean(req.user?.user_id);
   const result = validateCheckout(req.body, { isAuthenticated });
   if (!result.ok) {
-    const error = new Error("Dữ liệu không hợp lệ");
+    const firstMessage = result.errors?.[0]?.message || "Dữ liệu không hợp lệ";
+    const error = new Error(firstMessage);
     error.statusCode = 400;
     error.code = "VALIDATION_ERROR";
+    error.message = firstMessage;
+    error.details = result.errors;
     error.errors = result.errors;
     error.isOperational = true;
     return next(error);

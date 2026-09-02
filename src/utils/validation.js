@@ -1,4 +1,5 @@
 import { AppError } from "../errors/app-error.js";
+import { PRODUCT_STATUSES } from "../constants/product.js";
 
 const isString = (value) => typeof value === 'string';
 const isBoolean = (value) => typeof value === 'boolean';
@@ -42,52 +43,22 @@ export const isValidEmail = (email) => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 };
 
+export const normalizePhone = (raw) => {
+    if (!raw || typeof raw !== 'string') return null;
+    let cleaned = raw.trim().replace(/[\s.-]/g, '');
+    if (cleaned.startsWith('+84')) {
+        cleaned = '0' + cleaned.slice(3);
+    } else if (cleaned.startsWith('84') && cleaned.length === 11) {
+        cleaned = '0' + cleaned.slice(2);
+    }
+    return /^0\d{9}$/.test(cleaned) ? cleaned : null;
+};
+
 export const isStrongPassword = (password) => {
     if (!requiredString(password, 8, 128)) return false;
     const hasNumber = /\d/.test(password);
     const hasSpecial = /[^A-Za-z0-9]/.test(password);
     return hasNumber && hasSpecial;
-};
-
-export const validateRegister = (input = {}) => {
-    const errors = [];
-    if (!isValidEmail(input.email)) {
-        errors.push({ field: 'email', message: 'Email không đúng định dạng hoặc vượt quá độ dài cho phép' });
-    }
-    if (!isStrongPassword(input.password)) {
-        errors.push({ field: 'password', message: 'Mật khẩu phải từ 8 ký tự, có ít nhất 1 chữ số và 1 ký tự đặc biệt' });
-    }
-    if (!requiredString(input.full_name, 2, 100)) {
-        errors.push({ field: 'full_name', message: 'Họ tên bắt buộc và từ 2 đến 100 ký tự' });
-    }
-    if (errors.length) return { ok: false, errors };
-    return {
-        ok: true,
-        value: {
-            email: input.email.trim().toLowerCase(),
-            password: input.password,
-            full_name: input.full_name.trim(),
-        },
-    };
-};
-
-export const validateLogin = (input = {}) => {
-    const errors = [];
-    if (!isValidEmail(input.email)) {
-        errors.push({ field: 'email', message: 'Email không đúng định dạng' });
-    }
-    if (!requiredString(input.password, 1, 128)) {
-        errors.push({ field: 'password', message: 'Mật khẩu không được để trống' });
-    }
-    if (errors.length) return { ok: false, errors };
-    return {
-        ok: true,
-        value: {
-            email: input.email.trim().toLowerCase(),
-            password: input.password,
-            guest_token: isString(input.guest_token) && input.guest_token.trim().length ? input.guest_token.trim() : null,
-        },
-    };
 };
 
 export const validateRequestOtp = (input = {}) => {
@@ -204,10 +175,11 @@ export const validateUpdateProfile = (input = {}) => {
     }
 
     if (input.phone !== undefined) {
-        if (!isString(input.phone) || !/^0\d{9}$/.test(input.phone.trim())) {
-            errors.push({ field: 'phone', message: 'Số điện thoại phải gồm 10 chữ số và bắt đầu bằng số 0' });
+        const normalized = normalizePhone(input.phone);
+        if (!normalized) {
+            errors.push({ field: 'phone', message: 'Số điện thoại phải gồm 10 chữ số hợp lệ (bắt đầu bằng 0 hoặc +84)' });
         } else {
-            value.phone = input.phone.trim();
+            value.phone = normalized;
         }
     }
 
@@ -256,8 +228,9 @@ export const validateCreateAddress = (input = {}) => {
     if (!requiredString(input.receiver_name_user_address, 2, 100)) {
         errors.push({ field: 'receiver_name_user_address', message: 'Tên người nhận bắt buộc từ 2 đến 100 ký tự' });
     }
-    if (!isString(input.phone_user_address) || !/^0\d{9}$/.test(input.phone_user_address.trim())) {
-        errors.push({ field: 'phone_user_address', message: 'Số điện thoại người nhận phải gồm 10 chữ số và bắt đầu bằng số 0' });
+    const normalizedPhone = normalizePhone(input.phone_user_address);
+    if (!normalizedPhone) {
+        errors.push({ field: 'phone_user_address', message: 'Số điện thoại người nhận phải gồm 10 chữ số hợp lệ (bắt đầu bằng 0 hoặc +84)' });
     }
     if (!requiredString(input.address_line_user_address, 5, 255)) {
         errors.push({ field: 'address_line_user_address', message: 'Địa chỉ chi tiết bắt buộc từ 5 đến 255 ký tự' });
@@ -279,7 +252,7 @@ export const validateCreateAddress = (input = {}) => {
         ok: true,
         value: {
             receiver_name_user_address: input.receiver_name_user_address.trim(),
-            phone_user_address: input.phone_user_address.trim(),
+            phone_user_address: normalizedPhone || (typeof input.phone_user_address === 'string' ? input.phone_user_address.trim() : ''),
             address_line_user_address: input.address_line_user_address.trim(),
             ward_user_address: input.ward_user_address ? input.ward_user_address.trim() : null,
             district_user_address: input.district_user_address ? input.district_user_address.trim() : null,
@@ -308,10 +281,11 @@ export const validateUpdateAddress = (input = {}) => {
     }
 
     if (input.phone_user_address !== undefined) {
-        if (!isString(input.phone_user_address) || !/^0\d{9}$/.test(input.phone_user_address.trim())) {
-            errors.push({ field: 'phone_user_address', message: 'Số điện thoại người nhận phải gồm 10 chữ số và bắt đầu bằng số 0' });
+        const normalized = normalizePhone(input.phone_user_address);
+        if (!normalized) {
+            errors.push({ field: 'phone_user_address', message: 'Số điện thoại người nhận phải gồm 10 chữ số hợp lệ (bắt đầu bằng 0 hoặc +84)' });
         } else {
-            value.phone_user_address = input.phone_user_address.trim();
+            value.phone_user_address = normalized;
         }
     }
 
@@ -436,6 +410,15 @@ export const validateProductQuery = (input = {}) => {
         }
     }
 
+    let statusProduct = undefined;
+    if (input.status_product !== undefined && input.status_product !== null && input.status_product !== '') {
+        if (!PRODUCT_STATUSES.includes(input.status_product)) {
+            errors.push({ field: 'status_product', message: 'status_product phải là draft, active hoặc archived' });
+        } else {
+            statusProduct = input.status_product;
+        }
+    }
+
     if (errors.length) return { ok: false, errors };
 
     return {
@@ -449,6 +432,7 @@ export const validateProductQuery = (input = {}) => {
             min_price: minPrice,
             max_price: maxPrice,
             sort,
+            status_product: statusProduct,
         },
     };
 };
@@ -479,6 +463,203 @@ export const validateCreateProduct = (input = {}) => {
             description: input.description !== undefined && input.description !== null ? input.description.trim() : null,
         },
     };
+};
+
+export const validateCreateFullProduct = (input = {}) => {
+    const errors = [];
+    const baseResult = validateCreateProduct(input);
+    if (!baseResult.ok) errors.push(...baseResult.errors);
+
+    const optionNames = new Map();
+    const normalizedOptions = [];
+    if (!Array.isArray(input.options) || input.options.length === 0) {
+        errors.push({ field: 'options', message: 'options phải là mảng không rỗng' });
+    } else {
+        input.options.forEach((option, optionIndex) => {
+            const field = `options[${optionIndex}]`;
+            if (!option || !requiredString(option.name_option, 1, 100)) {
+                errors.push({ field: `${field}.name_option`, message: 'Tên option bắt buộc từ 1 đến 100 ký tự' });
+                return;
+            }
+            const name = option.name_option.trim();
+            const nameKey = name.toLowerCase();
+            if (optionNames.has(nameKey)) {
+                errors.push({ field: `${field}.name_option`, message: 'Tên option không được trùng nhau' });
+            }
+
+            const values = [];
+            const valueKeys = new Set();
+            if (!Array.isArray(option.values) || option.values.length === 0) {
+                errors.push({ field: `${field}.values`, message: 'Mỗi option phải có ít nhất một giá trị' });
+            } else {
+                option.values.forEach((rawValue, valueIndex) => {
+                    if (!requiredString(rawValue, 1, 100)) {
+                        errors.push({ field: `${field}.values[${valueIndex}]`, message: 'Giá trị option phải từ 1 đến 100 ký tự' });
+                        return;
+                    }
+                    const value = rawValue.trim();
+                    const valueKey = value.toLowerCase();
+                    if (valueKeys.has(valueKey)) {
+                        errors.push({ field: `${field}.values[${valueIndex}]`, message: 'Giá trị trong cùng option không được trùng nhau' });
+                        return;
+                    }
+                    valueKeys.add(valueKey);
+                    values.push(value);
+                });
+            }
+            optionNames.set(nameKey, { name, valueKeys });
+            normalizedOptions.push({ name_option: name, values });
+        });
+    }
+
+    const normalizedVariants = [];
+    const skuKeys = new Set();
+    const combinationKeys = new Set();
+    if (!Array.isArray(input.variants) || input.variants.length === 0) {
+        errors.push({ field: 'variants', message: 'variants phải là mảng không rỗng' });
+    } else {
+        input.variants.forEach((variant, variantIndex) => {
+            const field = `variants[${variantIndex}]`;
+            if (!variant || !requiredString(variant.sku, 1, 100)) {
+                errors.push({ field: `${field}.sku`, message: 'SKU bắt buộc từ 1 đến 100 ký tự' });
+            }
+            const sku = typeof variant?.sku === 'string' ? variant.sku.trim().toUpperCase() : '';
+            if (sku && skuKeys.has(sku)) errors.push({ field: `${field}.sku`, message: 'SKU không được trùng nhau' });
+            skuKeys.add(sku);
+
+            const price = Number(variant?.price);
+            if (!Number.isSafeInteger(price) || price < 0) {
+                errors.push({ field: `${field}.price`, message: 'price phải là số nguyên an toàn >= 0' });
+            }
+            const quantityStock = Number(variant?.quantity_stock ?? 0);
+            if (!Number.isSafeInteger(quantityStock) || quantityStock < 0) {
+                errors.push({ field: `${field}.quantity_stock`, message: 'quantity_stock phải là số nguyên >= 0' });
+            }
+
+            const optionValues = {};
+            if (!variant?.option_values || Array.isArray(variant.option_values) || typeof variant.option_values !== 'object') {
+                errors.push({ field: `${field}.option_values`, message: 'option_values phải là object theo dạng {"Color":"Black"}' });
+            } else {
+                const suppliedKeys = Object.keys(variant.option_values).map((key) => key.trim().toLowerCase());
+                for (const [nameKey, option] of optionNames.entries()) {
+                    const suppliedName = Object.keys(variant.option_values).find((key) => key.trim().toLowerCase() === nameKey);
+                    const suppliedValue = suppliedName ? variant.option_values[suppliedName] : undefined;
+                    if (!requiredString(suppliedValue, 1, 100) || !option.valueKeys.has(suppliedValue.trim().toLowerCase())) {
+                        errors.push({ field: `${field}.option_values.${option.name}`, message: `Giá trị không hợp lệ cho option ${option.name}` });
+                    } else {
+                        optionValues[option.name] = suppliedValue.trim();
+                    }
+                }
+                if (suppliedKeys.some((key) => !optionNames.has(key))) {
+                    errors.push({ field: `${field}.option_values`, message: 'option_values chứa option không tồn tại' });
+                }
+            }
+            const combinationKey = normalizedOptions.map((option) => `${option.name_option.toLowerCase()}:${String(optionValues[option.name_option] || '').toLowerCase()}`).join('|');
+            if (combinationKey && combinationKeys.has(combinationKey)) {
+                errors.push({ field: `${field}.option_values`, message: 'Tổ hợp option của variant không được trùng nhau' });
+            }
+            combinationKeys.add(combinationKey);
+            normalizedVariants.push({ sku, price, quantity_stock: quantityStock, option_values: optionValues });
+        });
+    }
+
+    const normalizedCategoryIds = [];
+    if (input.category_ids !== undefined) {
+        if (!Array.isArray(input.category_ids)) {
+            errors.push({ field: 'category_ids', message: 'category_ids phải là mảng' });
+        } else {
+            input.category_ids.forEach((id, index) => {
+                const value = Number(id);
+                if (!Number.isSafeInteger(value) || value <= 0) errors.push({ field: `category_ids[${index}]`, message: 'category_id phải là số nguyên dương' });
+                else normalizedCategoryIds.push(value);
+            });
+            if (new Set(normalizedCategoryIds).size !== normalizedCategoryIds.length) errors.push({ field: 'category_ids', message: 'category_ids không được trùng nhau' });
+        }
+    }
+    let primaryCategoryId = null;
+    if (input.primary_category_id !== undefined && input.primary_category_id !== null) {
+        primaryCategoryId = Number(input.primary_category_id);
+        if (!Number.isSafeInteger(primaryCategoryId) || primaryCategoryId <= 0) errors.push({ field: 'primary_category_id', message: 'primary_category_id phải là số nguyên dương' });
+        else if (!normalizedCategoryIds.includes(primaryCategoryId)) errors.push({ field: 'primary_category_id', message: 'primary_category_id phải nằm trong category_ids' });
+    }
+
+    const normalizedCollectionIds = [];
+    if (input.collection_ids !== undefined) {
+        if (!Array.isArray(input.collection_ids)) {
+            errors.push({ field: 'collection_ids', message: 'collection_ids phải là mảng' });
+        } else {
+            input.collection_ids.forEach((id, index) => {
+                const value = Number(id);
+                if (!Number.isSafeInteger(value) || value <= 0) errors.push({ field: `collection_ids[${index}]`, message: 'collection_id phải là số nguyên dương' });
+                else normalizedCollectionIds.push(value);
+            });
+            if (new Set(normalizedCollectionIds).size !== normalizedCollectionIds.length) errors.push({ field: 'collection_ids', message: 'collection_ids không được trùng nhau' });
+        }
+    }
+
+    const normalizedImages = [];
+    if (input.images !== undefined) {
+        if (!Array.isArray(input.images)) errors.push({ field: 'images', message: 'images phải là mảng' });
+        else input.images.forEach((image, imageIndex) => {
+            const imageResult = validateCreateProductImage(image || {});
+            if (!imageResult.ok) {
+                imageResult.errors.forEach((error) => errors.push({ ...error, field: `images[${imageIndex}].${error.field}` }));
+                return;
+            }
+            let optionValue = null;
+            if (image.option_value !== undefined && image.option_value !== null) {
+                const ref = image.option_value;
+                if (!ref || !requiredString(ref.option_name, 1, 100) || !requiredString(ref.value, 1, 100)) {
+                    errors.push({ field: `images[${imageIndex}].option_value`, message: 'option_value phải có option_name và value' });
+                } else {
+                    const option = optionNames.get(ref.option_name.trim().toLowerCase());
+                    if (!option || !option.valueKeys.has(ref.value.trim().toLowerCase())) errors.push({ field: `images[${imageIndex}].option_value`, message: 'Option value gắn với ảnh không tồn tại' });
+                    else optionValue = { option_name: option.name, value: ref.value.trim() };
+                }
+            }
+            normalizedImages.push({ ...imageResult.value, option_value: optionValue });
+        });
+    }
+
+    if (errors.length) return { ok: false, errors };
+    return { ok: true, value: { ...baseResult.value, options: normalizedOptions, variants: normalizedVariants, images: normalizedImages, category_ids: normalizedCategoryIds, primary_category_id: primaryCategoryId, collection_ids: normalizedCollectionIds } };
+};
+
+export const validateUpdateFullProduct = (input = {}) => {
+    const sanitized = {
+        ...input,
+        variants: Array.isArray(input.variants)
+            ? input.variants.map(({ product_variant_id, ...variant }) => variant)
+            : input.variants,
+        images: Array.isArray(input.images)
+            ? input.images.map(({ product_image_id, ...image }) => image)
+            : input.images,
+    };
+    const result = validateCreateFullProduct(sanitized);
+    if (!result.ok) return result;
+
+    const errors = [];
+    const variants = result.value.variants.map((variant, index) => {
+        const rawId = input.variants[index]?.product_variant_id;
+        if (rawId === undefined || rawId === null || rawId === '') return variant;
+        const id = Number(rawId);
+        if (!Number.isSafeInteger(id) || id <= 0) {
+            errors.push({ field: `variants[${index}].product_variant_id`, message: 'product_variant_id phải là số nguyên dương' });
+        }
+        return { ...variant, product_variant_id: id };
+    });
+    const images = result.value.images.map((image, index) => {
+        const rawId = input.images[index]?.product_image_id;
+        if (rawId === undefined || rawId === null || rawId === '') return image;
+        const id = Number(rawId);
+        if (!Number.isSafeInteger(id) || id <= 0) {
+            errors.push({ field: `images[${index}].product_image_id`, message: 'product_image_id phải là số nguyên dương' });
+        }
+        return { ...image, product_image_id: id };
+    });
+
+    if (errors.length) return { ok: false, errors };
+    return { ok: true, value: { ...result.value, variants, images } };
 };
 
 export const validateUpdateProduct = (input = {}) => {
@@ -630,7 +811,7 @@ export const validateCreateVariant = (input = {}) => {
     }
 
     let optionValueIds = [];
-    if (!Array.isArray(input.option_value_ids) || input.option_value_ids.length === 0) {
+    if (!Array.isArray(input.option_value_ids)) {
         errors.push({ field: 'option_value_ids', message: 'option_value_ids phải là mảng không rỗng' });
     } else {
         for (const id of input.option_value_ids) {
@@ -686,7 +867,7 @@ export const validateUpdateVariant = (input = {}) => {
     }
 
     if (input.option_value_ids !== undefined) {
-        if (!Array.isArray(input.option_value_ids) || input.option_value_ids.length === 0) {
+        if (!Array.isArray(input.option_value_ids)) {
             errors.push({ field: 'option_value_ids', message: 'option_value_ids phải là mảng không rỗng' });
         } else {
             const optionValueIds = [];
@@ -1120,6 +1301,16 @@ export const validateCreateCollection = (input = {}) => {
         }
     }
 
+    let parentCollectionId = null;
+    if (input.parent_collection_id !== undefined && input.parent_collection_id !== null && input.parent_collection_id !== '') {
+        const id = Number(input.parent_collection_id);
+        if (!Number.isSafeInteger(id) || id <= 0) {
+            errors.push({ field: 'parent_collection_id', message: 'Nhóm bộ sưu tập không hợp lệ' });
+        } else {
+            parentCollectionId = id;
+        }
+    }
+
     if (!requiredString(input.name_collection, 1, 255)) {
         errors.push({ field: 'name_collection', message: 'Tên bộ sưu tập bắt buộc từ 1 đến 255 ký tự' });
     }
@@ -1202,6 +1393,7 @@ export const validateCreateCollection = (input = {}) => {
         ok: true,
         value: {
             name_collection: input.name_collection.trim(),
+            parent_collection_id: parentCollectionId,
             slug_collection: slug,
             description_collection: description,
             image_collection: image,
@@ -1227,6 +1419,15 @@ export const validateUpdateCollection = (input = {}) => {
     }
 
     const value = {};
+    if (input.parent_collection_id !== undefined) {
+        if (input.parent_collection_id === null || input.parent_collection_id === '') {
+            value.parent_collection_id = null;
+        } else {
+            const id = Number(input.parent_collection_id);
+            if (!Number.isSafeInteger(id) || id <= 0) errors.push({ field: 'parent_collection_id', message: 'Nhóm bộ sưu tập không hợp lệ' });
+            else value.parent_collection_id = id;
+        }
+    }
     if (input.name_collection !== undefined) {
         if (!requiredString(input.name_collection, 1, 255)) {
             errors.push({ field: 'name_collection', message: 'Tên bộ sưu tập phải từ 1 đến 255 ký tự' });
@@ -2006,10 +2207,11 @@ export const validateCheckout = (input = {}, { isAuthenticated = false } = {}) =
                 value.email_order = input.email_order.trim().toLowerCase();
             }
 
-            if (!input.phone_order || typeof input.phone_order !== 'string' || !/^0\d{9}$/.test(input.phone_order.trim())) {
-                errors.push({ field: 'phone_order', message: 'Số điện thoại người nhận phải gồm 10 chữ số và bắt đầu bằng số 0' });
+            const normalizedPhone = normalizePhone(input.phone_order);
+            if (!normalizedPhone) {
+                errors.push({ field: 'phone_order', message: 'Số điện thoại người nhận phải gồm 10 chữ số hợp lệ (bắt đầu bằng 0 hoặc +84)' });
             } else {
-                value.phone_order = input.phone_order.trim();
+                value.phone_order = normalizedPhone;
             }
         }
 
@@ -2023,10 +2225,12 @@ export const validateCheckout = (input = {}, { isAuthenticated = false } = {}) =
                 value.receiver_name_order_address = input.receiver_name_order_address.trim();
             }
 
-            if (!input.phone_order_address || typeof input.phone_order_address !== 'string' || !/^0\d{9}$/.test(input.phone_order_address.trim())) {
-                errors.push({ field: 'phone_order_address', message: 'Số điện thoại địa chỉ giao hàng phải gồm 10 chữ số và bắt đầu bằng số 0' });
+            const rawPhoneAddress = input.phone_order_address || input.phone_order;
+            const normalizedPhoneAddress = normalizePhone(rawPhoneAddress);
+            if (!normalizedPhoneAddress) {
+                errors.push({ field: 'phone_order_address', message: 'Số điện thoại địa chỉ giao hàng phải gồm 10 chữ số hợp lệ (bắt đầu bằng 0 hoặc +84)' });
             } else {
-                value.phone_order_address = input.phone_order_address.trim();
+                value.phone_order_address = normalizedPhoneAddress;
             }
 
             if (!requiredString(input.address_line_order_address, 1, 500)) {
@@ -2107,8 +2311,9 @@ export const validateGuestOrderLookup = (input = {}) => {
         errors.push({ field: 'email', message: 'Email không hợp lệ' });
     }
 
-    if (!input.phone || typeof input.phone !== 'string' || !/^0\d{9}$/.test(input.phone.trim())) {
-        errors.push({ field: 'phone', message: 'Số điện thoại phải gồm 10 chữ số và bắt đầu bằng số 0' });
+    const normalizedPhone = normalizePhone(input.phone);
+    if (!normalizedPhone) {
+        errors.push({ field: 'phone', message: 'Số điện thoại phải gồm 10 chữ số hợp lệ (bắt đầu bằng 0 hoặc +84)' });
     }
 
     if (errors.length) return { ok: false, errors };
@@ -2118,7 +2323,7 @@ export const validateGuestOrderLookup = (input = {}) => {
         value: {
             order_code: input.order_code.trim(),
             email: input.email.trim().toLowerCase(),
-            phone: input.phone.trim(),
+            phone: normalizedPhone,
         },
     };
 };
@@ -2134,8 +2339,9 @@ export const validateGuestOrderCancel = (input = {}) => {
         errors.push({ field: 'email', message: 'Email không hợp lệ' });
     }
 
-    if (!input.phone || typeof input.phone !== 'string' || !/^0\d{9}$/.test(input.phone.trim())) {
-        errors.push({ field: 'phone', message: 'Số điện thoại phải gồm 10 chữ số và bắt đầu bằng số 0' });
+    const normalizedPhone = normalizePhone(input.phone);
+    if (!normalizedPhone) {
+        errors.push({ field: 'phone', message: 'Số điện thoại phải gồm 10 chữ số hợp lệ (bắt đầu bằng 0 hoặc +84)' });
     }
 
     if (errors.length) return { ok: false, errors };
@@ -2144,7 +2350,7 @@ export const validateGuestOrderCancel = (input = {}) => {
         ok: true,
         value: {
             email: input.email.trim().toLowerCase(),
-            phone: input.phone.trim(),
+            phone: normalizedPhone,
         },
     };
 };
@@ -2585,12 +2791,3 @@ export const validateAuditLogQuery = (input = {}) => {
 export const validateSessionId = (value) => {
     return validatePositiveId(value);
 };
-
-
-
-
-
-
-
-
-

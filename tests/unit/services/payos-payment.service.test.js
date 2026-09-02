@@ -175,6 +175,7 @@ describe("payOS payment service", () => {
     };
 
     let updatedReference = null;
+    let emailedOrder = null;
     const service = createPaymentService({
       payments: {
         findByPayOSOrderCode: async () => existingPayment,
@@ -188,6 +189,11 @@ describe("payOS payment service", () => {
           };
         },
       },
+      orders: {
+        updateOrderStatus: async () => {},
+        findAdminOrderById: async () => ({ order_id: 100, order_code: "ORD-100", email_order: "buyer@example.com", items: [], address: {} }),
+      },
+      emails: { sendOrderConfirmationEmail: async (order) => { emailedOrder = order; } },
       checksumKey,
     });
 
@@ -195,6 +201,8 @@ describe("payOS payment service", () => {
     assert.ok(result);
     assert.equal(result.status_payment, "paid");
     assert.equal(updatedReference, "FT260831");
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(emailedOrder.payment.status_payment, "paid");
   });
 
   test("handlePayOSWebhook is idempotent for already paid payment", async () => {
@@ -383,4 +391,3 @@ describe("payOS payment service", () => {
     );
   });
 });
-

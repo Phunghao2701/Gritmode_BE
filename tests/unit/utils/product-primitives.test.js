@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   validateProductQuery,
   validateCreateProduct,
+  validateCreateFullProduct,
   validateUpdateProduct,
 } from "../../../src/utils/validation.js";
 import { requireRole } from "../../../src/middlewares/auth.middleware.js";
@@ -80,6 +81,47 @@ describe("product validation primitives", () => {
 
     const forbidden = validateUpdateProduct({ product_id: 999 });
     assert.equal(forbidden.ok, false);
+  });
+
+  test("validateCreateFullProduct normalizes a complete product payload", () => {
+    const result = validateCreateFullProduct({
+      name_product: "  Essential Tee ",
+      description: " Cotton ",
+      options: [
+        { name_option: "Color", values: ["Black", "White"] },
+        { name_option: "Size", values: ["M", "L"] },
+      ],
+      variants: [
+        { sku: " tee-blk-m ", price: 450000, quantity_stock: 12, option_values: { color: "black", Size: "M" } },
+      ],
+      category_ids: [2],
+      primary_category_id: 2,
+      images: [{
+        url_product_image: "https://example.com/black.jpg",
+        option_value: { option_name: "color", value: "black" },
+      }],
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.value.name_product, "Essential Tee");
+    assert.equal(result.value.variants[0].sku, "TEE-BLK-M");
+    assert.deepEqual(result.value.variants[0].option_values, { Color: "black", Size: "M" });
+    assert.deepEqual(result.value.images[0].option_value, { option_name: "Color", value: "black" });
+  });
+
+  test("validateCreateFullProduct rejects duplicate SKU, combination, and unknown values", () => {
+    const result = validateCreateFullProduct({
+      name_product: "Essential Tee",
+      options: [{ name_option: "Color", values: ["Black"] }],
+      variants: [
+        { sku: "TEE-BLK", price: 1, quantity_stock: 1, option_values: { Color: "Black" } },
+        { sku: "tee-blk", price: 1, quantity_stock: 1, option_values: { Color: "White" } },
+      ],
+    });
+
+    assert.equal(result.ok, false);
+    assert.ok(result.errors.some((error) => error.field === "variants[1].sku"));
+    assert.ok(result.errors.some((error) => error.field === "variants[1].option_values.Color"));
   });
 
   test("requireRole middleware allows authorized roles and denies unauthorized", () => {

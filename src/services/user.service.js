@@ -1,8 +1,16 @@
 import { AppError, conflict, forbidden, notFound, unauthorized } from "../errors/app-error.js";
 import { safeUser } from "./auth.service.js";
-import { formatSession } from "./user-session.service.js";
 import { userRepository } from "../repositories/user.repository.js";
 import { sessionRepository } from "../repositories/session.repository.js";
+
+export const formatSession = (session, currentSessionId) => ({
+  user_session_id: session.user_session_id,
+  user_agent: session.user_agent,
+  ip_address: session.ip_address,
+  expired_at: session.expired_at,
+  created_at: session.created_at,
+  is_current: currentSessionId ? Number(session.user_session_id) === Number(currentSessionId) : false,
+});
 
 export const createUserService = ({
   users = userRepository,

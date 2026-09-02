@@ -206,6 +206,10 @@ export const orderRepository = {
         price_order_item,
         quantity_order_item,
         total_order_item,
+        (SELECT pi.url_product_image FROM product_image pi
+         JOIN product_variant pv ON pv.product_id = pi.product_id
+         WHERE pv.product_variant_id = order_item.product_variant_id
+         ORDER BY pi.position_product_image ASC, pi.product_image_id ASC LIMIT 1) AS image_product,
         created_at
       FROM order_item
       WHERE order_id = $1
@@ -507,4 +511,3 @@ export const orderRepository = {
     };
   },
 };
-

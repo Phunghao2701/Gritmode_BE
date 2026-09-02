@@ -4,6 +4,7 @@ import rootRouter from './routes/index.js';
 import cookieParser from 'cookie-parser';
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware.js';
 import { mountSwagger } from './config/swagger.js';
+import { resolve } from 'node:path';
 
 const app = express();
 
@@ -14,6 +15,7 @@ app.use(cors({
 }));
 app.use(cookieParser());
 app.use(express.json());
+app.use('/uploads', express.static(resolve(process.cwd(), 'uploads')));
 
 mountSwagger(app);
 

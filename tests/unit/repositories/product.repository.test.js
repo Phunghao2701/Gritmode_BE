@@ -91,6 +91,7 @@ describe("product repository", () => {
     const responses = [
       { rows: [{ product_id: 1, name_product: "Created", description: null, created_at: new Date(), updated_at: new Date() }] },
       { rows: [{ product_id: 1, name_product: "Updated", description: "New Desc", created_at: new Date(), updated_at: new Date() }] },
+      ...Array.from({ length: 9 }, () => ({ rowCount: 1, rows: [] })),
       { rowCount: 1 },
       { rowCount: 0 },
     ];

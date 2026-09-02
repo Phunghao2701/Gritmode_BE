@@ -8,8 +8,10 @@ import { voucherRepository } from "../repositories/voucher.repository.js";
 import { voucherService } from "./voucher.service.js";
 import { paymentService } from "./payment.service.js";
 import { withTransaction } from "../config/database.js";
+import { emailService } from "./email.service.js";
+import logger from "../utils/logger.js";
 
-const DEFAULT_SHIPPING_FEE = 30000;
+const DEFAULT_SHIPPING_FEE = 0;
 
 export const createOrderService = ({
   carts = cartRepository,
@@ -19,6 +21,7 @@ export const createOrderService = ({
   vouchers = voucherService,
   voucherRepo = voucherRepository,
   payments = paymentService,
+  emails = emailService,
   transaction = withTransaction,
 } = {}) => {
   const generateOrderCode = () => {
@@ -36,7 +39,7 @@ export const createOrderService = ({
     async createOrder(input, context = {}) {
       const owner = context.owner || (context.user ? { type: "user", userId: context.user.user_id } : { type: "guest", guestToken: input.guest_token });
 
-      return transaction(async (client) => {
+      const result = await transaction(async (client) => {
         // 1. Find active cart
         const cart = await carts.findActiveByOwner(owner, client);
         if (!cart || cart.status_cart !== "active") {
@@ -180,10 +183,10 @@ export const createOrderService = ({
             total_order_item: price * qty,
           };
         });
-        await orders.createOrderItems(orderItemsToInsert, client);
+        const createdItems = await orders.createOrderItems(orderItemsToInsert, client);
 
         // 10. Snapshot Order Address
-        await orders.createOrderAddress(
+        const createdAddress = await orders.createOrderAddress(
           {
             order_id: createdOrder.order_id,
             receiver_name_order_address: receiverName,
@@ -227,8 +230,17 @@ export const createOrderService = ({
           shipping_fee_order: Number(createdOrder.shipping_fee_order),
           total_order: Number(createdOrder.total_order),
           payment: paymentResult,
+          items: createdItems.map((item, index) => ({ ...item, image_product: cartItems[index]?.image || null })),
+          address: createdAddress,
         };
       });
+
+      if (result.payment?.payment_method === "cod") {
+        void emails.sendOrderConfirmationEmail(result).catch((error) => {
+          logger.error(`[order] Confirmation email failed for ${result.order_code}`, error);
+        });
+      }
+      return result;
     },
 
     /**
@@ -390,4 +402,3 @@ export const {
   lookupGuestOrder,
   cancelGuestOrder,
 } = defaultOrderService;
-

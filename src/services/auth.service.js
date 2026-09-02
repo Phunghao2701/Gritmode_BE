@@ -11,7 +11,7 @@ import { getConfig } from "../config/env.js";
 
 const config = getConfig();
 
-const safeUser = ({ password, ...user }) => user;
+export const safeUser = ({ password, ...user }) => user;
 
 const defaultOtpGenerator = () => randomInt(100000, 1000000).toString();
 
@@ -170,4 +170,3 @@ export const {
   me,
 } = defaultAuthService;
 
-export { safeUser };

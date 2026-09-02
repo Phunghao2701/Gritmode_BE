@@ -25,7 +25,7 @@ describe("category repository", () => {
         if (sqlStr.includes("JOIN category c ON")) {
           return { rows: [{ category_id: 1, name_category: "Clothing", is_primary: true }] };
         }
-        if (sqlStr.includes("product_category")) {
+        if (sqlStr.includes("product_category") && !sqlStr.includes("FROM category c")) {
           return { rows: [{ product_id: 555, category_id: 777, is_primary: Boolean(params?.[2] ?? true) }] };
         }
         if (sqlStr.includes("is_active = $1")) {

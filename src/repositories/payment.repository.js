@@ -53,7 +53,7 @@ export const paymentRepository = {
 
   async findByOrderId(orderId, client) {
     const { rows } = await runner(client).query(
-      `SELECT ${paymentColumns} FROM payment WHERE order_id = $1`,
+      `SELECT ${paymentColumns} FROM payment WHERE order_id = $1 ORDER BY created_at DESC, payment_id DESC LIMIT 1`,
       [orderId],
     );
     return rows[0] || null;

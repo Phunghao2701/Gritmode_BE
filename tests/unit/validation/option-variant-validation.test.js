@@ -57,8 +57,8 @@ describe("option and variant validation primitives", () => {
     const invalidPrice = validateCreateVariant({ sku: "TEST-SKU", price: -50, option_value_ids: [1] });
     assert.equal(invalidPrice.ok, false);
 
-    const invalidEmptyIds = validateCreateVariant({ sku: "TEST-SKU", price: 100000, option_value_ids: [] });
-    assert.equal(invalidEmptyIds.ok, false);
+    const singleSku = validateCreateVariant({ sku: "TEST-SKU", price: 100000, option_value_ids: [] });
+    assert.equal(singleSku.ok, true);
 
     const invalidDuplicateIds = validateCreateVariant({ sku: "TEST-SKU", price: 100000, option_value_ids: [1, 1] });
     assert.equal(invalidDuplicateIds.ok, false);

@@ -15,7 +15,8 @@ export const categoryRepository = {
         COALESCE(c.position_category, 0) AS position_category,
         COALESCE(c.is_active, true) AS is_active,
         c.created_at,
-        c.updated_at
+        c.updated_at,
+        (SELECT COUNT(*)::int FROM product_category pc WHERE pc.category_id = c.category_id) AS product_count
       FROM category c
       WHERE COALESCE(c.is_active, true) = true
       ORDER BY COALESCE(c.position_category, 0) ASC, c.name_category ASC
@@ -36,7 +37,8 @@ export const categoryRepository = {
           0 AS position_category,
           true AS is_active,
           c.created_at,
-          c.updated_at
+          c.updated_at,
+          (SELECT COUNT(*)::int FROM product_category pc WHERE pc.category_id = c.category_id) AS product_count
         FROM category c
         ORDER BY c.category_id ASC
       `;
@@ -57,7 +59,8 @@ export const categoryRepository = {
         COALESCE(c.position_category, 0) AS position_category,
         COALESCE(c.is_active, true) AS is_active,
         c.created_at,
-        c.updated_at
+        c.updated_at,
+        (SELECT COUNT(*)::int FROM product_category pc WHERE pc.category_id = c.category_id) AS product_count
       FROM category c
       ORDER BY COALESCE(c.position_category, 0) ASC, c.name_category ASC
     `;
@@ -76,7 +79,8 @@ export const categoryRepository = {
           0 AS position_category,
           true AS is_active,
           c.created_at,
-          c.updated_at
+          c.updated_at,
+          (SELECT COUNT(*)::int FROM product_category pc WHERE pc.category_id = c.category_id) AS product_count
         FROM category c
         ORDER BY c.category_id ASC
       `;

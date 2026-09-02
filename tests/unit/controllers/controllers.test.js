@@ -83,6 +83,21 @@ describe("controllers", () => {
     }
   });
 
+  test("auth controller clears an invalid refresh cookie", async () => {
+    const invalidRefresh = Object.assign(new Error("invalid refresh"), { statusCode: 401 });
+    const controller = createAuthController({
+      service: { refresh: async () => { throw invalidRefresh; } },
+      config: { nodeEnv: "test", refreshTtlMs: 1000 },
+    });
+    const res = response();
+    let passedError;
+    await controller.refresh(req({ cookies: { refresh_token: "stale" } }), res, (error) => { passedError = error; });
+    assert.equal(passedError, invalidRefresh);
+    assert.equal(res.cleared[0], "refresh_token");
+    assert.equal(res.cleared[1].path, "/api/v1");
+    assert.equal("maxAge" in res.cleared[1], false);
+  });
+
   test("user controller adapts profile, address and session operations", async () => {
     const users = {
       getProfile: async () => ({ user_id: "u1" }), updateProfile: async () => ({ full_name: "A" }),
@@ -751,7 +766,6 @@ describe("controllers", () => {
     }
   });
 });
-
 
 
 

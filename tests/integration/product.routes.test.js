@@ -80,6 +80,7 @@ describe("product HTTP contract", () => {
   test("admin endpoints require authentication", async () => {
     const endpoints = [
       ["post", "/api/v1/admin/products"],
+      ["post", "/api/v1/admin/products/full"],
       ["patch", "/api/v1/admin/products/1"],
       ["delete", "/api/v1/admin/products/1"],
     ];
@@ -93,6 +94,7 @@ describe("product HTTP contract", () => {
   test("admin endpoints deny customer access with 403 Forbidden", async () => {
     const endpoints = [
       ["post", "/api/v1/admin/products"],
+      ["post", "/api/v1/admin/products/full"],
       ["patch", "/api/v1/admin/products/1"],
       ["delete", "/api/v1/admin/products/1"],
     ];
@@ -129,5 +131,21 @@ describe("product HTTP contract", () => {
     assert.equal(successRes.status, 201);
     assert.equal(successRes.body.code, "PRODUCT_CREATED");
     assert.equal(successRes.body.data.name_product, "Admin Created");
+  });
+
+  test("admin full product endpoint validates nested payload", async () => {
+    const res = await request(app)
+      .post("/api/v1/admin/products/full")
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({
+        name_product: "Incomplete product",
+        options: [{ name_option: "Color", values: ["Black"] }],
+        variants: [{ sku: "INVALID", price: -1, quantity_stock: 0, option_values: { Color: "White" } }],
+      });
+
+    assert.equal(res.status, 400);
+    assert.equal(res.body.code, "VALIDATION_ERROR");
+    assert.ok(res.body.errors.some((error) => error.field === "variants[0].price"));
+    assert.ok(res.body.errors.some((error) => error.field === "variants[0].option_values.Color"));
   });
 });

@@ -33,6 +33,7 @@ export const createCollectionService = ({
     const list = await collections.listVisible();
     return list.map((item) => ({
       collection_id: item.collection_id,
+      parent_collection_id: item.parent_collection_id,
       name_collection: item.name_collection,
       slug_collection: item.slug_collection,
       description_collection: item.description_collection,
@@ -106,6 +107,12 @@ export const createCollectionService = ({
       throw badRequest("INVALID_DATE_RANGE", "start_at phải nhỏ hơn hoặc bằng end_at");
     }
 
+    if (data.parent_collection_id) {
+      const parent = await collections.findById(data.parent_collection_id);
+      if (!parent) throw notFound("PARENT_COLLECTION_NOT_FOUND", "Không tìm thấy nhóm bộ sưu tập");
+      if (parent.parent_collection_id) throw badRequest("COLLECTION_DEPTH_EXCEEDED", "Bộ sưu tập chỉ hỗ trợ hai cấp cha và con");
+    }
+
     return transaction(async (client) => {
       const created = await collections.create({
         ...data,
@@ -129,6 +136,9 @@ export const createCollectionService = ({
   async updateCollection(collectionId, data, userId) {
     const existing = await collections.findById(collectionId);
     if (!existing) throw notFound("COLLECTION_NOT_FOUND", "Không tìm thấy bộ sưu tập");
+    if (Number(data.parent_collection_id) === Number(collectionId)) {
+      throw badRequest("INVALID_PARENT_COLLECTION", "Bộ sưu tập không thể là cha của chính nó");
+    }
 
     let slug = undefined;
     if (data.slug_collection) {

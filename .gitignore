@@ -97,6 +97,7 @@ coverage/
 
 # Project-specific
 artifacts/
+uploads/
 *.tar.gz
 *.tgz
 # External references

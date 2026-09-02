@@ -15,7 +15,8 @@
     "test:smoke": "node --test --test-isolation=none tests/integration/health.route.test.js",
     "db:migrate": "node scripts/migrate.js",
     "db:schema:inspect": "node scripts/inspect-schema.js",
-    "db:schema:check": "node scripts/check-repository-reads.js"
+    "db:schema:check": "node scripts/check-repository-reads.js",
+    "db:seed:products": "node scripts/seed-demo-products.js"
   },
   "keywords": [],
   "author": "",
@@ -23,16 +24,12 @@
   "type": "module",
   "dependencies": {
     "axios": "^1.17.0",
-    "bcryptjs": "3.0.3",
-    "bullmq": "5.81.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "17.4.2",
     "express": "5.2.1",
-    "google-auth-library": "^10.6.2",
-    "googleapis": "^173.0.0",
-    "ioredis": "^5.11.1",
     "jsonwebtoken": "9.0.3",
+    "multer": "^2.0.2",
     "nodemailer": "^9.0.6",
     "pg": "8.21.0",
     "swagger-jsdoc": "6.3.0",

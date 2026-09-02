@@ -4,7 +4,6 @@ import assert from "node:assert/strict";
 import {
   validateCreateAddress,
   validatePasswordChange,
-  validateRegister,
   validateUpdateAddress,
   validateUpdateProfile,
   validatePositiveId,
@@ -13,28 +12,6 @@ import { createAccessToken, createRefreshToken, hashToken, verifyAccessToken } f
 import { AppError } from "../../../src/errors/app-error.js";
 
 describe("authentication & validation primitives", () => {
-  test("register validation normalizes email and accepts a strong password", () => {
-    const result = validateRegister({
-      email: "  User.Name+Tag@Example.COM ",
-      password: "StrongPassword!123",
-      full_name: "  Nguyen Van A  ",
-    });
-
-    assert.equal(result.ok, true);
-    assert.equal(result.value.email, "user.name+tag@example.com");
-    assert.equal(result.value.full_name, "Nguyen Van A");
-  });
-
-  test("register validation rejects weak passwords", () => {
-    const result = validateRegister({
-      email: "user@example.com",
-      password: "password",
-      full_name: "Nguyen Van A",
-    });
-
-    assert.equal(result.ok, false);
-    assert.ok(result.errors.some((item) => item.field === "password"));
-  });
 
   test("address validation requires receiver, phone and address line", () => {
     const invalid = validateCreateAddress({ ward_user_address: "Ward 1" });

@@ -103,6 +103,26 @@ describe("product variant service", () => {
     );
   });
 
+  test("single-SKU product accepts one empty option combination", async () => {
+    let existingCombinations = [];
+    const service = createProductVariantService({
+      products: { findById: async () => ({ product_id: 100 }) },
+      options: { listByProduct: async () => [] },
+      variants: {
+        findBySku: async () => null,
+        findExistingCombinations: async () => existingCombinations,
+        create: async () => ({ product_variant_id: 101, product_id: 100, sku: "DEFAULT", price: 100000 }),
+        createOptionValuesMap: async () => {}, initializeInventory: async () => {},
+        findById: async () => ({ product_variant_id: 101, option_values: [] }),
+      },
+      audits: {}, transaction,
+    });
+    const created = await service.createProductVariant(100, { sku: "DEFAULT", price: 100000, option_value_ids: [] });
+    assert.equal(created.product_variant_id, 101);
+    existingCombinations = [{ product_variant_id: 101, option_value_ids: [] }];
+    await assert.rejects(service.createProductVariant(100, { sku: "SECOND", price: 100000, option_value_ids: [] }), (error) => error.code === "VARIANT_COMBINATION_EXISTS");
+  });
+
   test("createProductVariant rejects foreign option values", async () => {
     const service = createProductVariantService({
       products: { findById: async () => ({ product_id: 100 }) },
