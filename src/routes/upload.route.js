@@ -24,7 +24,7 @@ const upload = multer({
 export const optimizeProductImage = (buffer) => sharp(buffer)
   .rotate()
   .resize({ width: MAX_IMAGE_DIMENSION, height: MAX_IMAGE_DIMENSION, fit: "inside", withoutEnlargement: true })
-  .webp({ quality: WEBP_QUALITY, effort: 4 })
+  .webp({ quality: 80, effort: 2 })
   .toBuffer();
 
 const uploadToCloudinary = (buffer) => new Promise((resolve, reject) => {
@@ -38,17 +38,19 @@ const uploadToCloudinary = (buffer) => new Promise((resolve, reject) => {
 const router = Router();
 router.use(requireAuth, requireRole("admin"));
 router.post("/product-images", upload.array("images", 20), async (req, res) => {
-  const images = [];
-  for (const file of req.files || []) {
-    const optimized = await optimizeProductImage(file.buffer);
-    const result = await uploadToCloudinary(optimized);
-    images.push({
-      url: result.secure_url,
-      public_id: result.public_id,
-      original_name: file.originalname,
-      size: result.bytes,
-    });
-  }
+  const files = req.files || [];
+  const images = await Promise.all(
+    files.map(async (file) => {
+      const optimized = await optimizeProductImage(file.buffer);
+      const result = await uploadToCloudinary(optimized);
+      return {
+        url: result.secure_url,
+        public_id: result.public_id,
+        original_name: file.originalname,
+        size: result.bytes,
+      };
+    })
+  );
   return ok(res, images, { status: 201, code: "PRODUCT_IMAGES_UPLOADED", message: "Tải ảnh sản phẩm thành công" });
 });
 

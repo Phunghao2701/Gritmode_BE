@@ -404,7 +404,7 @@ export const orderRepository = {
         p.payment_method,
         p.status_payment
       FROM "order" o
-      LEFT JOIN payment p ON p.order_id = o.order_id
+      LEFT JOIN LATERAL (SELECT payment_method, status_payment FROM payment WHERE order_id = o.order_id ORDER BY created_at DESC LIMIT 1) p ON true
       ${whereClause}
       ORDER BY ${sortField} ${sortDirection}
       LIMIT $${idx} OFFSET $${idx + 1}

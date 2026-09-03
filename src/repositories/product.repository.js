@@ -183,12 +183,35 @@ export const productRepository = {
   },
 
   async findBySlug(slug, client) {
+    const normalizedSlug = slugifyProductName(slug);
+    try {
+      const { rows } = await runner(client).query(
+        `SELECT product_id, name_product, description, status_product, created_at, updated_at
+         FROM product
+         WHERE status_product = 'active' AND (slug_product = $1 OR slug_product = $2)
+         LIMIT 1`,
+        [slug, normalizedSlug],
+      );
+      if (rows[0]) {
+        return {
+          product_id: Number(rows[0].product_id),
+          name_product: rows[0].name_product,
+          description: rows[0].description,
+          status_product: rows[0].status_product,
+          created_at: rows[0].created_at,
+          updated_at: rows[0].updated_at,
+        };
+      }
+    } catch {
+      // slug_product column might not exist yet, fallback
+    }
+
     const { rows } = await runner(client).query(
       `SELECT product_id, name_product, description, status_product, created_at, updated_at
        FROM product
        WHERE status_product = 'active'`,
     );
-    const product = rows.find((row) => slugifyProductName(row.name_product) === slugifyProductName(slug));
+    const product = rows.find((row) => slugifyProductName(row.name_product) === normalizedSlug);
     if (!product) return null;
     return {
       product_id: Number(product.product_id),

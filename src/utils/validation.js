@@ -487,6 +487,15 @@ export const validateCreateProduct = (input = {}) => {
         errors.push({ field: 'description', message: 'Mô tả phải là chuỗi' });
     }
 
+    let statusProduct = 'draft';
+    if (input.status_product !== undefined && input.status_product !== null) {
+        if (!['draft', 'active', 'archived'].includes(input.status_product)) {
+            errors.push({ field: 'status_product', message: 'Trạng thái sản phẩm không hợp lệ' });
+        } else {
+            statusProduct = input.status_product;
+        }
+    }
+
     if (errors.length) return { ok: false, errors };
 
     return {
@@ -494,6 +503,7 @@ export const validateCreateProduct = (input = {}) => {
         value: {
             name_product: input.name_product.trim(),
             description: input.description !== undefined && input.description !== null ? input.description.trim() : null,
+            status_product: statusProduct,
         },
     };
 };
@@ -611,7 +621,7 @@ export const validateCreateFullProduct = (input = {}) => {
     }
 
     const normalizedCategoryIds = [];
-    if (input.category_ids !== undefined) {
+    if (input.category_ids !== undefined && input.category_ids !== null) {
         if (!Array.isArray(input.category_ids)) {
             errors.push({ field: 'category_ids', message: 'category_ids phải là mảng' });
         } else {
@@ -623,11 +633,25 @@ export const validateCreateFullProduct = (input = {}) => {
             if (new Set(normalizedCategoryIds).size !== normalizedCategoryIds.length) errors.push({ field: 'category_ids', message: 'category_ids không được trùng nhau' });
         }
     }
+
     let primaryCategoryId = null;
-    if (input.primary_category_id !== undefined && input.primary_category_id !== null) {
-        primaryCategoryId = Number(input.primary_category_id);
-        if (!Number.isSafeInteger(primaryCategoryId) || primaryCategoryId <= 0) errors.push({ field: 'primary_category_id', message: 'primary_category_id phải là số nguyên dương' });
-        else if (!normalizedCategoryIds.includes(primaryCategoryId)) errors.push({ field: 'primary_category_id', message: 'primary_category_id phải nằm trong category_ids' });
+    const rawPrimary = input.primary_category_id ?? input.category_id;
+    if (rawPrimary !== undefined && rawPrimary !== null && rawPrimary !== '') {
+        const parsed = Number(rawPrimary);
+        if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+            errors.push({ field: 'primary_category_id', message: 'primary_category_id phải là số nguyên dương' });
+        } else {
+            primaryCategoryId = parsed;
+            if (!normalizedCategoryIds.includes(primaryCategoryId)) {
+                normalizedCategoryIds.push(primaryCategoryId);
+            }
+        }
+    } else if (normalizedCategoryIds.length > 0) {
+        primaryCategoryId = normalizedCategoryIds[0];
+    }
+
+    if (normalizedCategoryIds.length === 0 && !errors.some(e => e.field.includes('category'))) {
+        errors.push({ field: 'primary_category_id', message: 'Vui lòng chọn danh mục chính cho sản phẩm' });
     }
 
     const normalizedCollectionIds = [];
@@ -1132,7 +1156,7 @@ export const validateCreateCategory = (input = {}) => {
     }
 
     let parentId = null;
-    if (input.parent_category_id !== undefined && input.parent_category_id !== null) {
+    if (input.parent_category_id !== undefined && input.parent_category_id !== null && input.parent_category_id !== '') {
         const numId = Number(input.parent_category_id);
         if (!Number.isSafeInteger(numId) || numId <= 0) {
             errors.push({ field: 'parent_category_id', message: 'parent_category_id phải là số nguyên dương hoặc null' });
@@ -1151,7 +1175,7 @@ export const validateCreateCategory = (input = {}) => {
     }
 
     let position = 0;
-    if (input.position_category !== undefined && input.position_category !== null) {
+    if (input.position_category !== undefined && input.position_category !== null && input.position_category !== '') {
         const numPos = Number(input.position_category);
         if (!Number.isSafeInteger(numPos) || numPos < 0) {
             errors.push({ field: 'position_category', message: 'position_category phải là số nguyên >= 0' });
@@ -1211,7 +1235,7 @@ export const validateUpdateCategory = (input = {}) => {
     }
 
     if (input.parent_category_id !== undefined) {
-        if (input.parent_category_id === null) {
+        if (input.parent_category_id === null || input.parent_category_id === '') {
             value.parent_category_id = null;
         } else {
             const numId = Number(input.parent_category_id);

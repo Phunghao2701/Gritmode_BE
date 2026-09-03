@@ -6,7 +6,11 @@ import { errorHandler, notFoundHandler } from './middlewares/error.middleware.js
 import { mountSwagger } from './config/swagger.js';
 import { resolve } from 'node:path';
 
+import { serverTimingMiddleware } from './middlewares/server-timing.middleware.js';
+
 const app = express();
+
+app.use(serverTimingMiddleware);
 
 // Cấu hình Middleware hệ thống
 app.use(cors({

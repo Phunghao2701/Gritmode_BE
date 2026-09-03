@@ -1,12 +1,12 @@
 import { Router } from "express";
 import {
+  getProductMeta,
   getProducts,
   getAdminProducts,
   getProductById,
   getAdminProductById,
   publishProduct,
   archiveProduct,
-  createProduct,
   createFullProduct,
   updateFullProduct,
   updateProduct,
@@ -16,7 +16,6 @@ import { requireAuth, requireRole } from "../middlewares/auth.middleware.js";
 import { validateBody, validateQuery } from "../middlewares/validate.middleware.js";
 import {
   validateProductQuery,
-  validateCreateProduct,
   validateCreateFullProduct,
   validateUpdateFullProduct,
   validateUpdateProduct,
@@ -114,45 +113,9 @@ adminRouter.use(requireAuth, requireRole("admin"));
  *     responses:
  *       200: { description: Admin product list }
  */
+adminRouter.get("/meta", getProductMeta);
 adminRouter.get("/", validateQuery(validateProductQuery), getAdminProducts);
 
-/**
- * @swagger
- * /admin/products:
- *   post:
- *     summary: Tạo mới sản phẩm (Admin)
- *     tags:
- *       - Admin Products
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - name_product
- *             properties:
- *               name_product:
- *                 type: string
- *               description:
- *                 type: string
- *               status_product:
- *                 type: string
- *                 enum: [draft]
- *                 readOnly: true
- *     responses:
- *       201:
- *         description: Tạo sản phẩm thành công
- *       400:
- *         description: Dữ liệu không hợp lệ
- *       401:
- *         description: Chưa xác thực
- *       403:
- *         description: Không có quyền truy cập (Admin only)
- */
-adminRouter.post("/", validateBody(validateCreateProduct), createProduct);
 
 /**
  * @swagger

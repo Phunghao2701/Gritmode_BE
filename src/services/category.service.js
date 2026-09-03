@@ -5,6 +5,7 @@ import { auditRepository } from "../repositories/audit.repository.js";
 import { withTransaction } from "../config/database.js";
 import { slugify } from "../utils/validation.js";
 import { getProducts } from "./product.service.js";
+import { redisService } from "./redis.service.js";
 
 export const buildCategoryTree = (categories = []) => {
   const map = new Map();
@@ -77,8 +78,11 @@ export const createCategoryService = ({
   productListing = getProducts,
 } = {}) => ({
   async getCategories() {
-    const activeCategories = await categories.listActive();
-    return buildCategoryTree(activeCategories);
+    const { data } = await redisService.getOrSet("categories:tree:active", async () => {
+      const activeCategories = await categories.listActive();
+      return buildCategoryTree(activeCategories);
+    }, 3600);
+    return data;
   },
 
   async getAdminCategories(filter = {}) {
@@ -140,6 +144,8 @@ export const createCategoryService = ({
         }, client);
       }
 
+      await redisService.delByPattern("categories:*");
+      await redisService.delByPattern("products:*");
       return created;
     });
   },
@@ -192,6 +198,8 @@ export const createCategoryService = ({
         }, client);
       }
 
+      await redisService.delByPattern("categories:*");
+      await redisService.delByPattern("products:*");
       return updated;
     });
   },
@@ -201,17 +209,25 @@ export const createCategoryService = ({
     if (!existing) throw notFound("CATEGORY_NOT_FOUND", "Không tìm thấy danh mục");
 
     return transaction(async (client) => {
-      await categories.updateStatus(categoryId, false, client);
+      // 1. Detach child categories
+      await client.query(`UPDATE category SET parent_category_id = NULL WHERE parent_category_id = $1`, [categoryId]);
+      // 2. Remove product relations
+      await client.query(`DELETE FROM product_category WHERE category_id = $1`, [categoryId]);
+      // 3. Delete category
+      await categories.delete(categoryId, client);
       if (audits?.record) {
         await audits.record({
           userId,
-          action: "disable_category",
+          action: "delete_category",
           entityName: "category",
           entityId: categoryId,
           oldData: existing,
-          newData: { is_active: false },
+          newData: null,
         }, client);
       }
+
+      await redisService.delByPattern("categories:*");
+      await redisService.delByPattern("products:*");
     });
   },
 

@@ -5,6 +5,7 @@ import { auditRepository } from "../repositories/audit.repository.js";
 import { withTransaction } from "../config/database.js";
 import { slugify } from "../utils/validation.js";
 import { getProducts } from "./product.service.js";
+import { redisService } from "./redis.service.js";
 
 export const isCollectionVisible = (collection, now = new Date()) => {
   if (!collection) return false;
@@ -30,18 +31,21 @@ export const createCollectionService = ({
   productListing = getProducts,
 } = {}) => ({
   async getCollections() {
-    const list = await collections.listVisible();
-    return list.map((item) => ({
-      collection_id: item.collection_id,
-      parent_collection_id: item.parent_collection_id,
-      name_collection: item.name_collection,
-      slug_collection: item.slug_collection,
-      description_collection: item.description_collection,
-      image_collection: item.image_collection,
-      position_collection: item.position_collection,
-      start_at: item.start_at,
-      end_at: item.end_at,
-    }));
+    const { data } = await redisService.getOrSet("collections:list:visible", async () => {
+      const list = await collections.listVisible();
+      return list.map((item) => ({
+        collection_id: item.collection_id,
+        parent_collection_id: item.parent_collection_id,
+        name_collection: item.name_collection,
+        slug_collection: item.slug_collection,
+        description_collection: item.description_collection,
+        image_collection: item.image_collection,
+        position_collection: item.position_collection,
+        start_at: item.start_at,
+        end_at: item.end_at,
+      }));
+    }, 3600);
+    return data;
   },
 
   async getAdminCollections(filter = {}) {
@@ -129,6 +133,8 @@ export const createCollectionService = ({
         }, client);
       }
 
+      await redisService.delByPattern("collections:*");
+      await redisService.delByPattern("products:*");
       return created;
     });
   },
@@ -173,6 +179,8 @@ export const createCollectionService = ({
         }, client);
       }
 
+      await redisService.delByPattern("collections:*");
+      await redisService.delByPattern("products:*");
       return updated;
     });
   },
@@ -182,17 +190,25 @@ export const createCollectionService = ({
     if (!existing) throw notFound("COLLECTION_NOT_FOUND", "Không tìm thấy bộ sưu tập");
 
     return transaction(async (client) => {
-      await collections.updateStatus(collectionId, false, client);
+      // 1. Detach child collections
+      await client.query(`UPDATE collection SET parent_collection_id = NULL WHERE parent_collection_id = $1`, [collectionId]);
+      // 2. Remove product relations
+      await client.query(`DELETE FROM product_collection WHERE collection_id = $1`, [collectionId]);
+      // 3. Delete collection
+      await collections.delete(collectionId, client);
       if (audits?.record) {
         await audits.record({
           userId,
-          action: "disable_collection",
+          action: "delete_collection",
           entityName: "collection",
           entityId: collectionId,
           oldData: existing,
-          newData: { is_active: false },
+          newData: null,
         }, client);
       }
+
+      await redisService.delByPattern("collections:*");
+      await redisService.delByPattern("products:*");
     });
   },
 

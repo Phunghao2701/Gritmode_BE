@@ -30,6 +30,7 @@
     "dotenv": "17.4.2",
     "express": "5.2.1",
     "google-auth-library": "^10.6.2",
+    "ioredis": "^6.0.0",
     "jsonwebtoken": "9.0.3",
     "multer": "^2.0.2",
     "nodemailer": "^9.0.6",

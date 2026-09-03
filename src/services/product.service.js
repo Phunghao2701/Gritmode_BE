@@ -154,63 +154,74 @@ export const createProductService = ({
 
   async createFullProduct(input, adminUserId) {
     return transaction(async (client) => {
-      for (const categoryId of input.category_ids) {
-        if (!await categories.findById(categoryId, client)) {
-          throw notFound("CATEGORY_NOT_FOUND", `Không tìm thấy danh mục ${categoryId}`);
-        }
-      }
-      for (const collectionId of input.collection_ids || []) {
-        if (!await collections.findById(collectionId, client)) {
-          throw notFound("COLLECTION_NOT_FOUND", `Không tìm thấy bộ sưu tập ${collectionId}`);
-        }
-      }
-      for (const variant of input.variants) {
-        if (await variants.findBySku(variant.sku, client)) {
-          throw conflict("SKU_ALREADY_EXISTS", `SKU ${variant.sku} đã tồn tại`);
-        }
-      }
+      await Promise.all([
+        Promise.all(input.category_ids.map(async (categoryId) => {
+          if (!await categories.findById(categoryId, client)) {
+            throw notFound("CATEGORY_NOT_FOUND", `Không tìm thấy danh mục ${categoryId}`);
+          }
+        })),
+        Promise.all((input.collection_ids || []).map(async (collectionId) => {
+          if (!await collections.findById(collectionId, client)) {
+            throw notFound("COLLECTION_NOT_FOUND", `Không tìm thấy bộ sưu tập ${collectionId}`);
+          }
+        })),
+        Promise.all(input.variants.map(async (variant) => {
+          if (await variants.findBySku(variant.sku, client)) {
+            throw conflict("SKU_ALREADY_EXISTS", `SKU ${variant.sku} đã tồn tại`);
+          }
+        })),
+      ]);
 
       const product = await products.create(input, client);
       const valueIdByReference = new Map();
+      
       const createdOptions = [];
       for (const optionInput of input.options) {
         const createdOption = await options.create(product.product_id, optionInput, client);
-        const createdValues = [];
-        for (const value of optionInput.values) {
-          const createdValue = await options.createValue(createdOption.product_option_id, { value_option: value }, client);
-          valueIdByReference.set(`${optionInput.name_option.toLowerCase()}\u0000${value.toLowerCase()}`, Number(createdValue.product_option_value_id));
-          createdValues.push(createdValue);
-        }
+        const createdValues = await Promise.all(
+          optionInput.values.map((value) =>
+            options.createValue(createdOption.product_option_id, { value_option: value }, client)
+          )
+        );
+        createdValues.forEach((createdValue, idx) => {
+          valueIdByReference.set(`${optionInput.name_option.toLowerCase()}\u0000${optionInput.values[idx].toLowerCase()}`, Number(createdValue.product_option_value_id));
+        });
         createdOptions.push({ ...createdOption, values: createdValues });
       }
 
-      const createdVariants = [];
-      for (const variantInput of input.variants) {
-        const optionValueIds = input.options.map((option) => valueIdByReference.get(`${option.name_option.toLowerCase()}\u0000${variantInput.option_values[option.name_option].toLowerCase()}`));
-        const createdVariant = await variants.create(product.product_id, variantInput, client);
-        await variants.createOptionValuesMap(createdVariant.product_variant_id, optionValueIds, client);
-        await variants.initializeInventory(createdVariant.product_variant_id, client);
-        const inventory = await inventories.updateStock(createdVariant.product_variant_id, variantInput.quantity_stock, client);
-        createdVariants.push({ ...createdVariant, option_value_ids: optionValueIds, inventory });
-      }
+      const createdVariants = await Promise.all(
+        input.variants.map(async (variantInput) => {
+          const optionValueIds = input.options.map((option) =>
+            valueIdByReference.get(`${option.name_option.toLowerCase()}\u0000${variantInput.option_values[option.name_option].toLowerCase()}`)
+          );
+          const createdVariant = await variants.create(product.product_id, variantInput, client);
+          await variants.createOptionValuesMap(createdVariant.product_variant_id, optionValueIds, client);
+          await variants.initializeInventory(createdVariant.product_variant_id, client);
+          const inventory = await inventories.updateStock(createdVariant.product_variant_id, variantInput.quantity_stock, client);
+          return { ...createdVariant, option_value_ids: optionValueIds, inventory };
+        })
+      );
 
-      const createdImages = [];
-      for (const imageInput of input.images) {
-        const optionValueId = imageInput.option_value
-          ? valueIdByReference.get(`${imageInput.option_value.option_name.toLowerCase()}\u0000${imageInput.option_value.value.toLowerCase()}`)
-          : null;
-        createdImages.push(await images.create(product.product_id, { ...imageInput, product_option_value_id: optionValueId }, client));
-      }
-
-      const createdCategories = [];
-      for (const categoryId of input.category_ids) {
-        createdCategories.push(await categories.assignProduct(product.product_id, categoryId, categoryId === input.primary_category_id, client));
-      }
-
-      const createdCollections = [];
-      for (const [position, collectionId] of (input.collection_ids || []).entries()) {
-        createdCollections.push(await collections.addProduct(collectionId, product.product_id, position, client));
-      }
+      const [createdImages, createdCategories, createdCollections] = await Promise.all([
+        Promise.all(
+          input.images.map(async (imageInput) => {
+            const optionValueId = imageInput.option_value
+              ? valueIdByReference.get(`${imageInput.option_value.option_name.toLowerCase()}\u0000${imageInput.option_value.value.toLowerCase()}`)
+              : null;
+            return images.create(product.product_id, { ...imageInput, product_option_value_id: optionValueId }, client);
+          })
+        ),
+        Promise.all(
+          input.category_ids.map((categoryId) =>
+            categories.assignProduct(product.product_id, categoryId, categoryId === input.primary_category_id, client)
+          )
+        ),
+        Promise.all(
+          (input.collection_ids || []).map((collectionId, position) =>
+            collections.addProduct(collectionId, product.product_id, position, client)
+          )
+        ),
+      ]);
 
       const result = { ...product, options: createdOptions, variants: createdVariants, images: createdImages, categories: createdCategories, collections: createdCollections };
       if (audit?.log) {
@@ -250,28 +261,33 @@ export const createProductService = ({
       const existing = await products.findDetail(productId, client);
       if (!existing) throw notFound("PRODUCT_NOT_FOUND", "Không tìm thấy sản phẩm");
 
-      for (const categoryId of input.category_ids) {
-        if (!await categories.findById(categoryId, client)) {
-          throw notFound("CATEGORY_NOT_FOUND", `Không tìm thấy danh mục ${categoryId}`);
-        }
-      }
-      for (const collectionId of input.collection_ids || []) {
-        if (!await collections.findById(collectionId, client)) {
-          throw notFound("COLLECTION_NOT_FOUND", `Không tìm thấy bộ sưu tập ${collectionId}`);
-        }
-      }
+      await Promise.all([
+        Promise.all(input.category_ids.map(async (categoryId) => {
+          if (!await categories.findById(categoryId, client)) {
+            throw notFound("CATEGORY_NOT_FOUND", `Không tìm thấy danh mục ${categoryId}`);
+          }
+        })),
+        Promise.all((input.collection_ids || []).map(async (collectionId) => {
+          if (!await collections.findById(collectionId, client)) {
+            throw notFound("COLLECTION_NOT_FOUND", `Không tìm thấy bộ sưu tập ${collectionId}`);
+          }
+        })),
+      ]);
 
       const existingVariantIds = new Set(existing.variants.map((variant) => Number(variant.product_variant_id)));
       const retainedVariantIds = new Set();
-      for (const variantInput of input.variants) {
-        if (variantInput.product_variant_id && !existingVariantIds.has(Number(variantInput.product_variant_id))) {
-          throw conflict("VARIANT_NOT_IN_PRODUCT", `Biến thể ${variantInput.product_variant_id} không thuộc sản phẩm này`);
-        }
-        const skuOwner = await variants.findBySku(variantInput.sku, client);
-        if (skuOwner && Number(skuOwner.product_variant_id) !== Number(variantInput.product_variant_id || 0)) {
-          throw conflict("SKU_ALREADY_EXISTS", `SKU ${variantInput.sku} đã tồn tại`);
-        }
-      }
+      
+      await Promise.all(
+        input.variants.map(async (variantInput) => {
+          if (variantInput.product_variant_id && !existingVariantIds.has(Number(variantInput.product_variant_id))) {
+            throw conflict("VARIANT_NOT_IN_PRODUCT", `Biến thể ${variantInput.product_variant_id} không thuộc sản phẩm này`);
+          }
+          const skuOwner = await variants.findBySku(variantInput.sku, client);
+          if (skuOwner && Number(skuOwner.product_variant_id) !== Number(variantInput.product_variant_id || 0)) {
+            throw conflict("SKU_ALREADY_EXISTS", `SKU ${variantInput.sku} đã tồn tại`);
+          }
+        })
+      );
 
       await products.update(productId, input, client);
 
@@ -289,22 +305,24 @@ export const createProductService = ({
         }
       }
 
-      for (const variantInput of input.variants) {
-        const optionValueIds = input.options.map((option) =>
-          valueIdByReference.get(`${option.name_option.toLowerCase()}\u0000${variantInput.option_values[option.name_option].toLowerCase()}`),
-        );
-        let variant;
-        if (variantInput.product_variant_id) {
-          variant = await variants.update(variantInput.product_variant_id, variantInput, client);
-          retainedVariantIds.add(Number(variantInput.product_variant_id));
-        } else {
-          variant = await variants.create(productId, variantInput, client);
-          await variants.initializeInventory(variant.product_variant_id, client);
-          retainedVariantIds.add(Number(variant.product_variant_id));
-        }
-        await variants.replaceOptionValuesMap(variant.product_variant_id, optionValueIds, client);
-        await inventories.updateStock(variant.product_variant_id, variantInput.quantity_stock, client);
-      }
+      await Promise.all(
+        input.variants.map(async (variantInput) => {
+          const optionValueIds = input.options.map((option) =>
+            valueIdByReference.get(`${option.name_option.toLowerCase()}\u0000${variantInput.option_values[option.name_option].toLowerCase()}`),
+          );
+          let variant;
+          if (variantInput.product_variant_id) {
+            variant = await variants.update(variantInput.product_variant_id, variantInput, client);
+            retainedVariantIds.add(Number(variantInput.product_variant_id));
+          } else {
+            variant = await variants.create(productId, variantInput, client);
+            await variants.initializeInventory(variant.product_variant_id, client);
+            retainedVariantIds.add(Number(variant.product_variant_id));
+          }
+          await variants.replaceOptionValuesMap(variant.product_variant_id, optionValueIds, client);
+          await inventories.updateStock(variant.product_variant_id, variantInput.quantity_stock, client);
+        })
+      );
 
       for (const variantId of existingVariantIds) {
         if (retainedVariantIds.has(variantId)) continue;
@@ -315,15 +333,20 @@ export const createProductService = ({
       }
 
       await products.deleteImagesByProduct(productId, client);
-      for (const imageInput of input.images) {
-        const optionValueId = imageInput.option_value
-          ? valueIdByReference.get(`${imageInput.option_value.option_name.toLowerCase()}\u0000${imageInput.option_value.value.toLowerCase()}`)
-          : null;
-        await images.create(productId, { ...imageInput, product_option_value_id: optionValueId }, client);
-      }
-
-      await products.replaceCategories(productId, input.category_ids, input.primary_category_id, client);
-      await products.replaceCollections(productId, input.collection_ids || [], client);
+      
+      await Promise.all([
+        Promise.all(
+          input.images.map(async (imageInput) => {
+            const optionValueId = imageInput.option_value
+              ? valueIdByReference.get(`${imageInput.option_value.option_name.toLowerCase()}\u0000${imageInput.option_value.value.toLowerCase()}`)
+              : null;
+            return images.create(productId, { ...imageInput, product_option_value_id: optionValueId }, client);
+          })
+        ),
+        products.replaceCategories(productId, input.category_ids, input.primary_category_id, client),
+        products.replaceCollections(productId, input.collection_ids || [], client),
+      ]);
+      
       await products.deleteUnusedOptions(productId, client);
 
       const updated = await products.findDetail(productId, client);

@@ -79,7 +79,6 @@ describe("product HTTP contract", () => {
 
   test("admin endpoints require authentication", async () => {
     const endpoints = [
-      ["post", "/api/v1/admin/products"],
       ["post", "/api/v1/admin/products/full"],
       ["patch", "/api/v1/admin/products/1"],
       ["delete", "/api/v1/admin/products/1"],
@@ -93,7 +92,6 @@ describe("product HTTP contract", () => {
 
   test("admin endpoints deny customer access with 403 Forbidden", async () => {
     const endpoints = [
-      ["post", "/api/v1/admin/products"],
       ["post", "/api/v1/admin/products/full"],
       ["patch", "/api/v1/admin/products/1"],
       ["delete", "/api/v1/admin/products/1"],
@@ -105,32 +103,6 @@ describe("product HTTP contract", () => {
       assert.equal(res.status, 403);
       assert.equal(res.body.code, "FORBIDDEN_ROLE");
     }
-  });
-
-  test("admin create product validates body and creates successfully", async () => {
-    mock.method(productRepository, "create", async (data) => ({
-      product_id: 10,
-      name_product: data.name_product,
-      description: data.description,
-    }));
-    mock.method(auditRepository, "log", async () => ({}));
-
-    // Validation error when name is missing
-    const errRes = await request(app)
-      .post("/api/v1/admin/products")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({});
-    assert.equal(errRes.status, 400);
-    assert.equal(errRes.body.code, "VALIDATION_ERROR");
-
-    // Success
-    const successRes = await request(app)
-      .post("/api/v1/admin/products")
-      .set("Authorization", `Bearer ${adminToken}`)
-      .send({ name_product: "Admin Created", description: "Oversized" });
-    assert.equal(successRes.status, 201);
-    assert.equal(successRes.body.code, "PRODUCT_CREATED");
-    assert.equal(successRes.body.data.name_product, "Admin Created");
   });
 
   test("admin full product endpoint validates nested payload", async () => {
