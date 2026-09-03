@@ -307,13 +307,11 @@ adminRouter.get("/:productId", getAdminProductById);
  *           type: integer
  *     responses:
  *       200:
- *         description: Xóa sản phẩm thành công
+ *         description: Sản phẩm được soft delete bằng trạng thái archived
  *       403:
  *         description: Không có quyền truy cập (Admin only)
  *       404:
  *         description: Không tìm thấy sản phẩm
- *       409:
- *         description: Sản phẩm không thể xóa do có dữ liệu liên kết
  */
 adminRouter.patch("/:productId", validateBody(validateUpdateProduct), updateProduct);
 adminRouter.delete("/:productId", deleteProduct);

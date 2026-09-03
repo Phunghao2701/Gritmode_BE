@@ -1,33 +1,54 @@
 import { Router } from "express";
 import multer from "multer";
-import { mkdirSync } from "node:fs";
-import { extname, resolve } from "node:path";
-import { randomUUID } from "node:crypto";
+import sharp from "sharp";
+import { v2 as cloudinary } from "cloudinary";
 import { requireAuth, requireRole } from "../middlewares/auth.middleware.js";
 import { ok } from "../utils/api-response.js";
 
-export const productUploadDirectory = resolve(process.cwd(), "uploads/products");
-mkdirSync(productUploadDirectory, { recursive: true });
-
+const MAX_IMAGE_DIMENSION = 2000;
+const WEBP_QUALITY = 85;
 const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: productUploadDirectory,
-    filename: (_req, file, callback) => callback(null, `${randomUUID()}${extname(file.originalname).toLowerCase()}`),
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024, files: 20 },
   fileFilter: (_req, file, callback) => callback(allowedTypes.has(file.mimetype) ? null : new Error("Chỉ chấp nhận ảnh JPEG, PNG hoặc WebP"), allowedTypes.has(file.mimetype)),
 });
 
+export const optimizeProductImage = (buffer) => sharp(buffer)
+  .rotate()
+  .resize({ width: MAX_IMAGE_DIMENSION, height: MAX_IMAGE_DIMENSION, fit: "inside", withoutEnlargement: true })
+  .webp({ quality: WEBP_QUALITY, effort: 4 })
+  .toBuffer();
+
+const uploadToCloudinary = (buffer) => new Promise((resolve, reject) => {
+  const stream = cloudinary.uploader.upload_stream(
+    { folder: "gritmode/products", resource_type: "image" },
+    (error, result) => error ? reject(error) : resolve(result),
+  );
+  stream.end(buffer);
+});
+
 const router = Router();
 router.use(requireAuth, requireRole("admin"));
-router.post("/product-images", upload.array("images", 20), (req, res) => {
-  const origin = `${req.protocol}://${req.get("host")}`;
-  const images = (req.files || []).map((file) => ({
-    url: `${origin}/uploads/products/${file.filename}`,
-    original_name: file.originalname,
-    size: file.size,
-  }));
+router.post("/product-images", upload.array("images", 20), async (req, res) => {
+  const images = [];
+  for (const file of req.files || []) {
+    const optimized = await optimizeProductImage(file.buffer);
+    const result = await uploadToCloudinary(optimized);
+    images.push({
+      url: result.secure_url,
+      public_id: result.public_id,
+      original_name: file.originalname,
+      size: result.bytes,
+    });
+  }
   return ok(res, images, { status: 201, code: "PRODUCT_IMAGES_UPLOADED", message: "Tải ảnh sản phẩm thành công" });
 });
 

@@ -64,7 +64,11 @@ export const createProductService = ({
   async getAdminProducts(query = {}) {
     const page = query.page || 1;
     const limit = query.limit || 20;
-    const filters = { search: query.search, status_product: query.status_product };
+    const filters = {
+      search: query.search,
+      status_product: query.status_product,
+      exclude_status_product: PRODUCT_STATUS.ARCHIVED,
+    };
     const [total, items] = await Promise.all([
       products.countProducts(filters),
       products.findProducts(filters, { page, limit }, query.sort || "newest"),
@@ -337,21 +341,14 @@ export const createProductService = ({
         throw notFound("PRODUCT_NOT_FOUND", "Không tìm thấy sản phẩm");
       }
 
-      const isReferenced = products.hasReferences ? await products.hasReferences(productId, client) : false;
-      if (isReferenced) {
-        throw conflict("PRODUCT_HAS_REFERENCES", "Sản phẩm không thể xóa do có dữ liệu liên kết");
-      }
-
-      const deleted = await products.delete(productId, client);
-      if (!deleted) {
-        throw notFound("PRODUCT_NOT_FOUND", "Không tìm thấy sản phẩm");
-      }
+      if (existing.status_product === PRODUCT_STATUS.ARCHIVED) return existing;
+      const deleted = await products.updateStatus(productId, PRODUCT_STATUS.ARCHIVED, client);
 
       if (audit?.log) {
         await audit.log(
           {
             userId: adminUserId,
-            action: "delete_product",
+            action: "soft_delete_product",
             entityName: "product",
             entityId: productId,
             oldData: existing,
@@ -359,6 +356,7 @@ export const createProductService = ({
           client,
         );
       }
+      return deleted;
     });
   },
 

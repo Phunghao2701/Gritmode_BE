@@ -63,6 +63,24 @@ describe("product service", () => {
     assert.equal(capturedSort, "price_asc");
   });
 
+  test("getAdminProducts excludes soft-deleted products", async () => {
+    let capturedFilters;
+    const service = createProductService({
+      products: {
+        countProducts: async (filters) => {
+          capturedFilters = filters;
+          return 0;
+        },
+        findProducts: async () => [],
+      },
+      audit: {},
+      transaction,
+    });
+
+    await service.getAdminProducts();
+    assert.equal(capturedFilters.exclude_status_product, "archived");
+  });
+
   test("getProductById returns full detail or throws not found", async () => {
     const service = createProductService({
       products: {
@@ -203,17 +221,18 @@ describe("product service", () => {
     );
   });
 
-  test("deleteProduct rejects referenced products and deletes clean products", async () => {
-    let deletedId = null;
+  test("deleteProduct archives products without deleting linked data", async () => {
+    let archivedId = null;
     let auditEntry = null;
 
     const service = createProductService({
       products: {
-        findById: async (id) => (id === 1 || id === 2 ? sampleProduct : null),
-        hasReferences: async (id) => id === 2,
-        delete: async (id) => {
-          deletedId = id;
-          return true;
+        findById: async (id) => id === 3
+          ? { ...sampleProduct, status_product: "archived" }
+          : (id === 1 || id === 2 ? sampleProduct : null),
+        updateStatus: async (id, status) => {
+          archivedId = id;
+          return { ...sampleProduct, status_product: status };
         },
       },
       audit: {
@@ -224,22 +243,19 @@ describe("product service", () => {
       transaction,
     });
 
-    // Deleting referenced product #2 throws 409
-    await assert.rejects(
-      service.deleteProduct(2, "admin-1"),
-      (error) => error.code === "PRODUCT_HAS_REFERENCES" && error.statusCode === 409,
-    );
-
-    // Deleting missing product #999 throws 404
     await assert.rejects(
       service.deleteProduct(999, "admin-1"),
       (error) => error.code === "PRODUCT_NOT_FOUND",
     );
 
-    // Deleting clean product #1 succeeds
-    await service.deleteProduct(1, "admin-1");
-    assert.equal(deletedId, 1);
-    assert.equal(auditEntry.action, "delete_product");
+    const deleted = await service.deleteProduct(2, "admin-1");
+    assert.equal(archivedId, 2);
+    assert.equal(deleted.status_product, "archived");
+    assert.equal(auditEntry.action, "soft_delete_product");
+
+    const alreadyArchived = await service.deleteProduct(3, "admin-1");
+    assert.equal(alreadyArchived.status_product, "archived");
+    assert.equal(archivedId, 2);
   });
 
   test("productExists returns boolean existence", async () => {

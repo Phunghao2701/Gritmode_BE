@@ -17,6 +17,11 @@ const buildWhereClause = (filters, values) => {
     conditions.push(`p.status_product = $${values.length}`);
   }
 
+  if (filters.exclude_status_product) {
+    values.push(filters.exclude_status_product);
+    conditions.push(`p.status_product <> $${values.length}`);
+  }
+
   if (filters.search) {
     values.push(`%${filters.search}%`);
     conditions.push(`p.name_product ILIKE $${values.length}`);

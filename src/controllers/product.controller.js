@@ -102,8 +102,8 @@ export const createProductController = ({ service = productService } = {}) => ({
     try {
       const productId = validatePositiveId(req.params.productId);
       const deleteMethod = service.deleteProduct || service.delete;
-      await deleteMethod.call(service, productId, req.user?.user_id);
-      return ok(res, null, { code: "PRODUCT_DELETED", message: "Product deleted successfully" });
+      const data = await deleteMethod.call(service, productId, req.user?.user_id);
+      return ok(res, data, { code: "PRODUCT_ARCHIVED", message: "Product archived successfully" });
     } catch (e) {
       next(e);
     }
