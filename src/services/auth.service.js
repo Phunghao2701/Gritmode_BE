@@ -10,6 +10,7 @@ import { withTransaction } from "../config/database.js";
 import { getConfig } from "../config/env.js";
 import { OAuth2Client } from "google-auth-library";
 import axios from "axios";
+import logger from "../utils/logger.js";
 
 const config = getConfig();
 const googleClient = new OAuth2Client(config.googleClientId);
@@ -98,7 +99,11 @@ export const createAuthService = ({
       const expiredAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
       await emailOtps.create({ email, otpHash, expiredAt });
-      await emails.sendOtpEmail({ email, otp });
+
+      // Gửi email bất đồng bộ trong background để phản hồi ngay lập tức cho UI (< 30ms)
+      Promise.resolve(emails.sendOtpEmail({ email, otp })).catch((err) => {
+        logger.error(`[auth] Background OTP email delivery failed for ${email}:`, err);
+      });
 
       return { expired_in: 300 };
     },

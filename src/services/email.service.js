@@ -25,12 +25,17 @@ export const createEmailService = ({
   env = process.env,
   transportFactory = nodemailer.createTransport,
 } = {}) => {
+  let cachedTransport = null;
+
   const getTransport = () => {
+    if (cachedTransport) return cachedTransport;
+
     const missing = REQUIRED_EMAIL_ENV.filter((name) => !env[name]?.trim());
     if (missing.length) {
       throw new AppError(500, "EMAIL_CONFIG_MISSING", `Thiếu cấu hình email: ${missing.join(", ")}`);
     }
-    return transportFactory({
+
+    cachedTransport = transportFactory({
       service: "gmail",
       auth: {
         type: "OAuth2",
@@ -39,7 +44,12 @@ export const createEmailService = ({
         clientSecret: env.CLIENT_SECRET,
         refreshToken: env.REFRESH_TOKEN,
       },
+      pool: true,
+      maxConnections: 5,
+      maxMessages: 100,
     });
+
+    return cachedTransport;
   };
 
   return {
