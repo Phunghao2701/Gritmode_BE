@@ -3,8 +3,6 @@ import { AppError } from "../errors/app-error.js";
 import logger from "../utils/logger.js";
 import { orderConfirmationText, renderOrderConfirmationEmail } from "../templates/order-confirmation.template.js";
 
-const REQUIRED_EMAIL_ENV = ["EMAIL_USER", "CLIENT_ID", "CLIENT_SECRET", "REFRESH_TOKEN"];
-
 const otpTemplate = (otp) => `
 <!doctype html>
 <html lang="vi">
@@ -30,25 +28,43 @@ export const createEmailService = ({
   const getTransport = () => {
     if (cachedTransport) return cachedTransport;
 
-    const missing = REQUIRED_EMAIL_ENV.filter((name) => !env[name]?.trim());
-    if (missing.length) {
-      throw new AppError(500, "EMAIL_CONFIG_MISSING", `Thiếu cấu hình email: ${missing.join(", ")}`);
+    if (!env.EMAIL_USER?.trim()) {
+      throw new AppError(500, "EMAIL_CONFIG_MISSING", "Thiếu cấu hình email: EMAIL_USER");
     }
 
-    cachedTransport = transportFactory({
-      service: "gmail",
-      auth: {
-        type: "OAuth2",
-        user: env.EMAIL_USER,
-        clientId: env.CLIENT_ID,
-        clientSecret: env.CLIENT_SECRET,
-        refreshToken: env.REFRESH_TOKEN,
-      },
-      pool: true,
-      maxConnections: 5,
-      maxMessages: 100,
-    });
+    const hasAppPassword = Boolean((env.EMAIL_PASS || env.EMAIL_APP_PASSWORD)?.trim());
+    const hasOAuth = Boolean(env.CLIENT_ID?.trim() && env.CLIENT_SECRET?.trim() && env.REFRESH_TOKEN?.trim());
 
+    if (!hasAppPassword && !hasOAuth) {
+      throw new AppError(
+        500,
+        "EMAIL_CONFIG_MISSING",
+        "Thiếu cấu hình gửi email: Cần cung cấp EMAIL_PASS (App Password) hoặc bộ 3 (CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN)",
+      );
+    }
+
+    const transportConfig = {
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true,
+      auth: hasAppPassword
+        ? {
+          user: env.EMAIL_USER.trim(),
+          pass: (env.EMAIL_PASS || env.EMAIL_APP_PASSWORD).trim(),
+        }
+        : {
+          type: "OAuth2",
+          user: env.EMAIL_USER.trim(),
+          clientId: env.CLIENT_ID.trim(),
+          clientSecret: env.CLIENT_SECRET.trim(),
+          refreshToken: env.REFRESH_TOKEN.trim(),
+        },
+      connectionTimeout: 10000, // 10s
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+    };
+
+    cachedTransport = transportFactory(transportConfig);
     return cachedTransport;
   };
 
