@@ -1,7 +1,13 @@
+import dns from "node:dns";
 import nodemailer from "nodemailer";
 import { AppError } from "../errors/app-error.js";
 import logger from "../utils/logger.js";
 import { orderConfirmationText, renderOrderConfirmationEmail } from "../templates/order-confirmation.template.js";
+
+// Đảm bảo DNS ưu tiên IPv4 khi chạy trên cloud container như Render/AWS
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder("ipv4first");
+}
 
 const otpTemplate = (otp) => `
 <!doctype html>
@@ -47,6 +53,7 @@ export const createEmailService = ({
       host: "smtp.gmail.com",
       port: 465,
       secure: true,
+      family: 4, // Ép buộc dùng IPv4 để tránh treo kết nối trên Render / Linux cloud
       auth: hasAppPassword
         ? {
           user: env.EMAIL_USER.trim(),
@@ -59,6 +66,9 @@ export const createEmailService = ({
           clientSecret: env.CLIENT_SECRET.trim(),
           refreshToken: env.REFRESH_TOKEN.trim(),
         },
+      tls: {
+        rejectUnauthorized: false,
+      },
       connectionTimeout: 10000, // 10s
       greetingTimeout: 10000,
       socketTimeout: 15000,
