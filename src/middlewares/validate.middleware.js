@@ -15,14 +15,24 @@ export const validateQuery = (validator) => (req, res, next) => {
 };
 
 /**
- * Validates a route parameter using a validator function that throws AppError on failure.
+ * Validates a route parameter using a validator function.
+ * Supports both validators that return { ok, value, errors } and validators that throw AppError on failure.
  * The validated (coerced) value is stored in req.validatedParams[paramName].
  */
 export const validateParam = (paramName, validator) => (req, res, next) => {
   try {
-    const value = validator(req.params[paramName]);
-    if (!req.validatedParams) req.validatedParams = {};
-    req.validatedParams[paramName] = value;
+    const result = validator(req.params[paramName]);
+    if (result && typeof result === "object" && "ok" in result) {
+      if (!result.ok) {
+        const errorMsg = result.errors?.[0]?.message || "Tham số không hợp lệ";
+        return next(new AppError(400, "VALIDATION_ERROR", errorMsg, result.errors));
+      }
+      if (!req.validatedParams) req.validatedParams = {};
+      req.validatedParams[paramName] = result.value;
+    } else {
+      if (!req.validatedParams) req.validatedParams = {};
+      req.validatedParams[paramName] = result;
+    }
     next();
   } catch (err) {
     next(err);

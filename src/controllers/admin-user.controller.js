@@ -2,6 +2,14 @@ import { ok } from "../utils/api-response.js";
 import * as adminUserService from "../services/admin-user.service.js";
 import logger from "../utils/logger.js";
 
+const getParamUserId = (req) => {
+  const raw = req.validatedParams ? req.validatedParams.userId : req.params.userId;
+  if (raw && typeof raw === "object" && "value" in raw) {
+    return raw.value;
+  }
+  return raw;
+};
+
 export const createAdminUserController = ({
   users = adminUserService,
 } = {}) => ({
@@ -24,7 +32,7 @@ export const createAdminUserController = ({
    */
   getUserById: async (req, res, next) => {
     try {
-      const userId = req.validatedParams ? req.validatedParams.userId : req.params.userId;
+      const userId = getParamUserId(req);
       const result = await users.getUserById(userId);
       return ok(res, result, { message: "Lấy chi tiết người dùng thành công" });
     } catch (error) {
@@ -38,7 +46,7 @@ export const createAdminUserController = ({
    */
   blockUser: async (req, res, next) => {
     try {
-      const userId = req.validatedParams ? req.validatedParams.userId : req.params.userId;
+      const userId = getParamUserId(req);
       const adminId = req.user.user_id;
       const result = await users.blockUser(userId, adminId);
       return ok(res, result, { message: "Khóa tài khoản người dùng thành công" });
@@ -53,7 +61,7 @@ export const createAdminUserController = ({
    */
   unblockUser: async (req, res, next) => {
     try {
-      const userId = req.validatedParams ? req.validatedParams.userId : req.params.userId;
+      const userId = getParamUserId(req);
       const adminId = req.user.user_id;
       const result = await users.unblockUser(userId, adminId);
       return ok(res, result, { message: "Mở khóa tài khoản người dùng thành công" });
@@ -68,7 +76,7 @@ export const createAdminUserController = ({
    */
   setUserInactive: async (req, res, next) => {
     try {
-      const userId = req.validatedParams ? req.validatedParams.userId : req.params.userId;
+      const userId = getParamUserId(req);
       const adminId = req.user.user_id;
       const result = await users.setUserInactive(userId, adminId);
       return ok(res, result, { message: "Vô hiệu hóa tài khoản người dùng thành công" });
