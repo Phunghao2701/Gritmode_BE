@@ -120,6 +120,10 @@ export const inventoryRepository = {
    * Count total inventory records matching filter.
    */
   async countAll(filter = {}, client) {
+    if (!filter.search && !filter.low_stock && !filter.out_of_stock) {
+      const { rows } = await runner(client).query(`SELECT COUNT(*) AS count FROM inventory`);
+      return parseInt(rows[0]?.count || "0", 10);
+    }
     const { whereClause, params } = buildWhere(filter);
     const query = `
       SELECT COUNT(*) AS count

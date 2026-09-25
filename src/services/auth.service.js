@@ -172,7 +172,40 @@ export const createAuthService = ({
      */
     async refresh(rawToken, context = {}) {
       if (!rawToken) throw unauthorized("REFRESH_TOKEN_REQUIRED", "Thiếu refresh token");
-      const existing = await sessions.findActiveByHash(hashToken(rawToken));
+      const hashed = hashToken(rawToken);
+
+      // Fast path: find session + user in 1 joined query and rotate in 1 update query
+      if (typeof sessions.findActiveByHashWithUser === "function" && typeof sessions.rotate === "function") {
+        const activeRecord = await sessions.findActiveByHashWithUser(hashed);
+        if (!activeRecord) throw unauthorized("REFRESH_TOKEN_INVALID", "Refresh token không hợp lệ hoặc đã hết hạn");
+        const { session, user } = activeRecord;
+        assertActive(user);
+
+        const newRefreshToken = createRefreshToken();
+        const updated = await sessions.rotate(
+          session.user_session_id,
+          hashToken(newRefreshToken),
+          new Date(Date.now() + tokenOptions.refreshTtlMs),
+          context.userAgent,
+          context.ipAddress,
+        );
+        if (!updated) throw unauthorized("REFRESH_TOKEN_INVALID", "Phiên đăng nhập đã hết hạn hoặc bị hủy");
+
+        return {
+          user: safeUser(user),
+          access_token: createAccessToken(
+            { user_id: user.user_id, email: user.email, role: user.role, session_id: session.user_session_id },
+            {
+              secret: tokenOptions.accessSecret,
+              expiresIn: tokenOptions.accessExpiresIn,
+            },
+          ),
+          refresh_token: newRefreshToken,
+        };
+      }
+
+      // Fallback path
+      const existing = await sessions.findActiveByHash(hashed);
       if (!existing) throw unauthorized("REFRESH_TOKEN_INVALID", "Refresh token không hợp lệ hoặc đã hết hạn");
       const user = await users.findById(existing.user_id);
       if (!user) throw unauthorized("REFRESH_TOKEN_INVALID", "Refresh token không hợp lệ");
