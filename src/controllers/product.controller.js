@@ -16,6 +16,7 @@ export const createProductController = ({ service = productService } = {}) => ({
         return { categories, collections };
       }, 1800);
       if (isCached) res.setHeader("X-Cache", "HIT");
+      res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=1800");
       return ok(res, data, { message: "Lấy metadata sản phẩm thành công" });
     } catch (e) {
       next(e);
@@ -31,6 +32,7 @@ export const createProductController = ({ service = productService } = {}) => ({
         return getProductsMethod.call(service, query);
       }, 900);
       if (isCached) res.setHeader("X-Cache", "HIT");
+      res.setHeader("Cache-Control", "public, max-age=120, stale-while-revalidate=600");
       return ok(res, data, { message: "Products retrieved successfully" });
     } catch (e) {
       next(e);
@@ -61,6 +63,7 @@ export const createProductController = ({ service = productService } = {}) => ({
           : await service.getProductById(validatePositiveId(identifier));
       }, 1800);
       if (isCached) res.setHeader("X-Cache", "HIT");
+      res.setHeader("Cache-Control", "public, max-age=120, stale-while-revalidate=600");
       return ok(res, data, { message: "Product retrieved successfully" });
     } catch (e) {
       next(e);

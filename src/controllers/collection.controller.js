@@ -8,6 +8,7 @@ export const createCollectionController = ({
   getCollections: async (req, res, next) => {
     try {
       const data = await service.getCollections();
+      res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=1800");
       return ok(res, data);
     } catch (e) {
       next(e);
@@ -27,6 +28,7 @@ export const createCollectionController = ({
     try {
       const collectionId = validatePositiveId(req.params.collectionId);
       const data = await service.getCollectionById(collectionId, req.user?.role === "admin");
+      res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=1800");
       return ok(res, data);
     } catch (e) {
       next(e);

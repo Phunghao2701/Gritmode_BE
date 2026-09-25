@@ -30,19 +30,21 @@ const buildWhereClause = (filters, values) => {
   if (filters.category_id) {
     values.push(filters.category_id);
     conditions.push(`EXISTS (
-      WITH RECURSIVE category_tree AS (
-        SELECT category_id
-        FROM category
-        WHERE category_id = $${values.length}
-        UNION ALL
-        SELECT child.category_id
-        FROM category child
-        JOIN category_tree parent ON child.parent_category_id = parent.category_id
-      )
       SELECT 1
       FROM product_category pc
-      JOIN category_tree ct ON ct.category_id = pc.category_id
       WHERE pc.product_id = p.product_id
+        AND pc.category_id IN (
+          WITH RECURSIVE category_tree AS (
+            SELECT category_id
+            FROM category
+            WHERE category_id = $${values.length}
+            UNION ALL
+            SELECT child.category_id
+            FROM category child
+            JOIN category_tree parent ON child.parent_category_id = parent.category_id
+          )
+          SELECT category_id FROM category_tree
+        )
     )`);
   }
 
