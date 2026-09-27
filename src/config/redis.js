@@ -30,7 +30,7 @@ export const getRedisClient = () => {
     });
 
     redisClient.on('connect', () => {
-      console.log('✅ [Redis] Connected successfully to Upstash Redis');
+      console.log('✅ [Redis] Connected successfully to Redis server');
     });
 
     redisClient.on('ready', () => {

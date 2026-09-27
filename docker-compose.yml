@@ -11,8 +11,6 @@ services:
       - NODE_ENV=development
       - PORT=5000
       - POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-gritmode_db}
-      - LOCAL_POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-gritmode_db}
-      - SUPABASE_POSTGRES_URL=${POSTGRES_URL}
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=${JWT_SECRET:-gritmode_super_secret_jwt_key_local_development_123456}
       - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1d}
