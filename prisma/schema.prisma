@@ -1,0 +1,434 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("POSTGRES_URL")
+}
+
+model admin_audit_log {
+  admin_audit_log_id        BigInt    @id @default(autoincrement())
+  user_id                   String?   @db.Uuid
+  action_admin_audit_log    String    @db.VarChar(100)
+  entity_admin_audit_log    String    @db.VarChar(100)
+  entity_id_admin_audit_log String?   @db.VarChar(100)
+  old_data                  String?
+  new_data                  String?
+  created_at                DateTime? @default(now()) @db.Timestamp(6)
+  user                      user?     @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model cart {
+  cart_id     BigInt      @id @default(autoincrement())
+  user_id     String?     @db.Uuid
+  guest_token String?     @unique @db.VarChar(255)
+  status_cart status_cart @default(active)
+  created_at  DateTime?   @default(now()) @db.Timestamp(6)
+  updated_at  DateTime?   @default(now()) @db.Timestamp(6)
+  user        user?       @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  cart_item   cart_item[]
+  order       order[]
+
+  @@index([user_id, guest_token, status_cart], map: "idx_cart_owner_status")
+  @@index([user_id, status_cart], map: "idx_cart_user_status")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model cart_item {
+  cart_item_id       BigInt          @id @default(autoincrement())
+  cart_id            BigInt
+  product_variant_id BigInt
+  quantity_cart_item Int             @default(1)
+  created_at         DateTime?       @default(now()) @db.Timestamp(6)
+  updated_at         DateTime?       @default(now()) @db.Timestamp(6)
+  cart               cart            @relation(fields: [cart_id], references: [cart_id], onDelete: Cascade, onUpdate: NoAction)
+  product_variant    product_variant @relation(fields: [product_variant_id], references: [product_variant_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([cart_id, product_variant_id])
+  @@index([cart_id, created_at, cart_item_id], map: "idx_cart_item_cart_created")
+}
+
+model category {
+  category_id          BigInt             @id @default(autoincrement())
+  parent_category_id   BigInt?
+  name_category        String             @db.VarChar(255)
+  slug_category        String             @unique @db.VarChar(255)
+  description_category String?
+  position_category    Int                @default(0)
+  is_active            Boolean            @default(true)
+  created_at           DateTime?          @default(now()) @db.Timestamp(6)
+  updated_at           DateTime?          @default(now()) @db.Timestamp(6)
+  category             category?          @relation("categoryTocategory", fields: [parent_category_id], references: [category_id], onDelete: NoAction, onUpdate: NoAction)
+  other_category       category[]         @relation("categoryTocategory")
+  product_category     product_category[]
+}
+
+model collection {
+  collection_id          BigInt               @id @default(autoincrement())
+  name_collection        String               @db.VarChar(255)
+  slug_collection        String               @unique @db.VarChar(255)
+  description_collection String?
+  image_collection       String?              @db.VarChar(1000)
+  is_active              Boolean              @default(true)
+  start_at               DateTime?            @db.Timestamp(6)
+  end_at                 DateTime?            @db.Timestamp(6)
+  created_at             DateTime?            @default(now()) @db.Timestamp(6)
+  updated_at             DateTime?            @default(now()) @db.Timestamp(6)
+  parent_collection_id   BigInt?
+  collection             collection?          @relation("collectionTocollection", fields: [parent_collection_id], references: [collection_id], onDelete: Restrict, onUpdate: NoAction)
+  other_collection       collection[]         @relation("collectionTocollection")
+  product_collection     product_collection[]
+
+  @@index([parent_collection_id], map: "idx_collection_parent_collection_id")
+}
+
+model email_otp {
+  email_otp_id  BigInt    @id @default(autoincrement())
+  email         String    @db.VarChar(255)
+  otp_hash      String    @db.VarChar(255)
+  attempt_count Int       @default(0)
+  expired_at    DateTime  @db.Timestamp(6)
+  verified_at   DateTime? @db.Timestamp(6)
+  created_at    DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([email], map: "idx_email_otp_email")
+  @@index([email, created_at], map: "idx_email_otp_email_created_at")
+}
+
+model inventory {
+  inventory_id       BigInt          @id @default(autoincrement())
+  product_variant_id BigInt          @unique
+  quantity_stock     Int             @default(0)
+  quantity_reserved  Int             @default(0)
+  created_at         DateTime?       @default(now()) @db.Timestamp(6)
+  updated_at         DateTime?       @default(now()) @db.Timestamp(6)
+  product_variant    product_variant @relation(fields: [product_variant_id], references: [product_variant_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([updated_at(sort: Desc)], map: "idx_inventory_updated_at")
+  @@index([product_variant_id, quantity_stock, quantity_reserved], map: "idx_inventory_variant_stock")
+}
+
+model order {
+  order_id           BigInt         @id @default(autoincrement())
+  order_code         String         @unique @db.VarChar(50)
+  user_id            String?        @db.Uuid
+  cart_id            BigInt?
+  voucher_id         BigInt?
+  code_voucher_order String?        @db.VarChar(100)
+  email_order        String         @db.VarChar(255)
+  phone_order        String         @db.VarChar(20)
+  status_order       status_order   @default(pending)
+  subtotal_order     BigInt         @default(0)
+  discount_order     BigInt         @default(0)
+  shipping_fee_order BigInt         @default(0)
+  total_order        BigInt         @default(0)
+  note_order         String?
+  created_at         DateTime?      @default(now()) @db.Timestamp(6)
+  updated_at         DateTime?      @default(now()) @db.Timestamp(6)
+  cart               cart?          @relation(fields: [cart_id], references: [cart_id], onDelete: NoAction, onUpdate: NoAction)
+  user               user?          @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+  voucher            voucher?       @relation(fields: [voucher_id], references: [voucher_id], onDelete: NoAction, onUpdate: NoAction)
+  order_address      order_address?
+  order_item         order_item[]
+  payment            payment[]
+
+  @@index([created_at(sort: Desc)], map: "idx_order_created_at")
+  @@index([status_order], map: "idx_order_status")
+  @@index([user_id], map: "idx_order_user_id")
+}
+
+model order_address {
+  order_address_id            BigInt    @id @default(autoincrement())
+  order_id                    BigInt    @unique
+  receiver_name_order_address String    @db.VarChar(255)
+  phone_order_address         String    @db.VarChar(20)
+  address_line_order_address  String    @db.VarChar(500)
+  ward_order_address          String?   @db.VarChar(150)
+  district_order_address      String?   @db.VarChar(150)
+  province_order_address      String?   @db.VarChar(150)
+  created_at                  DateTime? @default(now()) @db.Timestamp(6)
+  order                       order     @relation(fields: [order_id], references: [order_id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model order_item {
+  order_item_id           BigInt           @id @default(autoincrement())
+  order_id                BigInt
+  product_variant_id      BigInt?
+  name_product_order_item String           @db.VarChar(255)
+  sku_order_item          String?          @db.VarChar(100)
+  variant_order_item      String?          @db.VarChar(255)
+  price_order_item        BigInt
+  quantity_order_item     Int
+  total_order_item        BigInt
+  created_at              DateTime?        @default(now()) @db.Timestamp(6)
+  order                   order            @relation(fields: [order_id], references: [order_id], onDelete: Cascade, onUpdate: NoAction)
+  product_variant         product_variant? @relation(fields: [product_variant_id], references: [product_variant_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([order_id], map: "idx_order_item_order_id")
+}
+
+model payment {
+  payment_id                  BigInt         @id @default(autoincrement())
+  order_id                    BigInt
+  payment_method              payment_method
+  status_payment              status_payment @default(pending)
+  amount_payment              BigInt
+  payos_order_code            BigInt?        @unique
+  payos_payment_link_id       String?        @unique @db.VarChar(255)
+  payos_transaction_reference String?        @db.VarChar(255)
+  checkout_url                String?        @db.VarChar(1000)
+  qr_code                     String?
+  expired_at                  DateTime?      @db.Timestamp(6)
+  paid_at                     DateTime?      @db.Timestamp(6)
+  created_at                  DateTime?      @default(now()) @db.Timestamp(6)
+  updated_at                  DateTime?      @default(now()) @db.Timestamp(6)
+  order                       order          @relation(fields: [order_id], references: [order_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([order_id], map: "idx_payment_order_id")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model product {
+  product_id         BigInt               @id @default(autoincrement())
+  name_product       String               @db.VarChar(255)
+  description        String?
+  status_product     status_product       @default(draft)
+  created_at         DateTime?            @default(now()) @db.Timestamp(6)
+  updated_at         DateTime?            @default(now()) @db.Timestamp(6)
+  sale_price         BigInt?
+  sale_start_at      DateTime?            @db.Timestamp(6)
+  sale_end_at        DateTime?            @db.Timestamp(6)
+  slug_product       String?              @db.VarChar(255)
+  product_category   product_category[]
+  product_collection product_collection[]
+  product_image      product_image[]
+  product_option     product_option[]
+  product_variant    product_variant[]
+
+  @@index([created_at], map: "idx_product_created_at")
+  @@index([name_product], map: "idx_product_name")
+  @@index([slug_product], map: "idx_product_slug_product")
+  @@index([status_product], map: "idx_product_status")
+  @@index([status_product, created_at(sort: Desc)], map: "idx_product_status_created_at")
+}
+
+model product_category {
+  product_id  BigInt
+  category_id BigInt
+  is_primary  Boolean  @default(false)
+  category    category @relation(fields: [category_id], references: [category_id], onDelete: Cascade, onUpdate: NoAction)
+  product     product  @relation(fields: [product_id], references: [product_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([product_id, category_id])
+  @@index([category_id], map: "idx_product_category_cat_id")
+  @@index([category_id, product_id], map: "idx_product_category_cat_prod")
+}
+
+model product_collection {
+  product_id                  BigInt
+  collection_id               BigInt
+  position_product_collection Int        @default(0)
+  collection                  collection @relation(fields: [collection_id], references: [collection_id], onDelete: Cascade, onUpdate: NoAction)
+  product                     product    @relation(fields: [product_id], references: [product_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([product_id, collection_id])
+  @@index([collection_id], map: "idx_product_collection_col_id")
+  @@index([collection_id, product_id], map: "idx_product_collection_col_prod")
+}
+
+model product_image {
+  product_image_id        BigInt                @id @default(autoincrement())
+  product_id              BigInt
+  product_option_value_id BigInt?
+  url_product_image       String                @db.VarChar(1000)
+  alt_product_image       String?               @db.VarChar(255)
+  position_product_image  Int                   @default(0)
+  created_at              DateTime?             @default(now()) @db.Timestamp(6)
+  updated_at              DateTime?             @default(now()) @db.Timestamp(6)
+  product                 product               @relation(fields: [product_id], references: [product_id], onDelete: Cascade, onUpdate: NoAction)
+  product_option_value    product_option_value? @relation(fields: [product_option_value_id], references: [product_option_value_id], onUpdate: NoAction)
+
+  @@index([product_id, position_product_image], map: "idx_product_image_product_pos")
+}
+
+model product_option {
+  product_option_id    BigInt                 @id @default(autoincrement())
+  product_id           BigInt
+  name_option          String                 @db.VarChar(100)
+  created_at           DateTime?              @default(now()) @db.Timestamp(6)
+  updated_at           DateTime?              @default(now()) @db.Timestamp(6)
+  product              product                @relation(fields: [product_id], references: [product_id], onDelete: Cascade, onUpdate: NoAction)
+  product_option_value product_option_value[]
+}
+
+model product_option_value {
+  product_option_value_id      BigInt                         @id @default(autoincrement())
+  product_option_id            BigInt
+  value_option                 String                         @db.VarChar(100)
+  created_at                   DateTime?                      @default(now()) @db.Timestamp(6)
+  updated_at                   DateTime?                      @default(now()) @db.Timestamp(6)
+  product_image                product_image[]
+  product_option               product_option                 @relation(fields: [product_option_id], references: [product_option_id], onDelete: Cascade, onUpdate: NoAction)
+  product_variant_option_value product_variant_option_value[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model product_variant {
+  product_variant_id           BigInt                         @id @default(autoincrement())
+  product_id                   BigInt
+  sku                          String                         @unique @db.VarChar(100)
+  price                        BigInt
+  created_at                   DateTime?                      @default(now()) @db.Timestamp(6)
+  updated_at                   DateTime?                      @default(now()) @db.Timestamp(6)
+  sale_price                   BigInt?
+  sale_start_at                DateTime?                      @db.Timestamp(6)
+  sale_end_at                  DateTime?                      @db.Timestamp(6)
+  cart_item                    cart_item[]
+  inventory                    inventory?
+  order_item                   order_item[]
+  product                      product                        @relation(fields: [product_id], references: [product_id], onDelete: Cascade, onUpdate: NoAction)
+  product_variant_option_value product_variant_option_value[]
+
+  @@index([price], map: "idx_product_variant_price")
+  @@index([product_id], map: "idx_product_variant_product_id")
+  @@index([product_id, price], map: "idx_product_variant_prod_price")
+  @@index([sku], map: "idx_product_variant_sku")
+}
+
+model product_variant_option_value {
+  product_variant_id      BigInt
+  product_option_value_id BigInt
+  product_option_value    product_option_value @relation(fields: [product_option_value_id], references: [product_option_value_id], onDelete: Cascade, onUpdate: NoAction)
+  product_variant         product_variant      @relation(fields: [product_variant_id], references: [product_variant_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([product_variant_id, product_option_value_id])
+}
+
+model schema_migrations {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique @db.VarChar(255)
+  executed_at DateTime? @default(now()) @db.Timestamp(6)
+}
+
+model user {
+  user_id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email             String            @unique @db.VarChar(255)
+  status            status_account    @default(active)
+  role              role_account      @default(customer)
+  full_name         String?           @db.VarChar(255)
+  url_image         String?           @db.VarChar(1000)
+  date_of_birth     DateTime?         @db.Date
+  gender            Boolean?
+  phone             String?           @unique @db.VarChar(20)
+  email_verified_at DateTime?         @db.Timestamp(6)
+  created_at        DateTime?         @default(now()) @db.Timestamp(6)
+  updated_at        DateTime?         @default(now()) @db.Timestamp(6)
+  admin_audit_log   admin_audit_log[]
+  cart              cart[]
+  order             order[]
+  user_address      user_address[]
+  user_session      user_session[]
+}
+
+model user_address {
+  user_address_id            BigInt    @id @default(autoincrement())
+  user_id                    String    @db.Uuid
+  receiver_name_user_address String    @db.VarChar(255)
+  phone_user_address         String    @db.VarChar(20)
+  address_line_user_address  String    @db.VarChar(500)
+  ward_user_address          String?   @db.VarChar(150)
+  district_user_address      String?   @db.VarChar(150)
+  province_user_address      String?   @db.VarChar(150)
+  is_default                 Boolean   @default(false)
+  created_at                 DateTime? @default(now()) @db.Timestamp(6)
+  updated_at                 DateTime? @default(now()) @db.Timestamp(6)
+  user                       user      @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model user_session {
+  user_session_id    BigInt    @id @default(autoincrement())
+  user_id            String    @db.Uuid
+  refresh_token_hash String    @unique @db.VarChar(255)
+  user_agent         String?   @db.VarChar(500)
+  ip_address         String?   @db.VarChar(100)
+  expired_at         DateTime  @db.Timestamp(6)
+  revoked_at         DateTime? @db.Timestamp(6)
+  created_at         DateTime? @default(now()) @db.Timestamp(6)
+  updated_at         DateTime? @default(now()) @db.Timestamp(6)
+  user               user      @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([user_id], map: "idx_user_session_user")
+  @@index([user_id], map: "idx_user_session_user_id")
+}
+
+model voucher {
+  voucher_id              BigInt        @id @default(autoincrement())
+  code_voucher            String        @unique @db.VarChar(100)
+  name_voucher            String        @db.VarChar(255)
+  discount_type           discount_type
+  discount_value          BigInt
+  minimum_order_amount    BigInt        @default(0)
+  maximum_discount_amount BigInt?
+  usage_limit             Int?
+  usage_count             Int           @default(0)
+  start_at                DateTime?     @db.Timestamp(6)
+  end_at                  DateTime?     @db.Timestamp(6)
+  is_active               Boolean       @default(true)
+  created_at              DateTime?     @default(now()) @db.Timestamp(6)
+  updated_at              DateTime?     @default(now()) @db.Timestamp(6)
+  order                   order[]
+}
+
+enum discount_type {
+  percentage
+  fixed_amount
+}
+
+enum payment_method {
+  cod
+  payos
+}
+
+enum role_account {
+  customer
+  admin
+}
+
+enum status_account {
+  active
+  inactive
+  blocked
+}
+
+enum status_cart {
+  active
+  converted
+  abandoned
+}
+
+enum status_order {
+  pending
+  confirmed
+  processing
+  shipping
+  completed
+  cancelled
+}
+
+enum status_payment {
+  pending
+  processing
+  paid
+  expired
+  failed
+  cancelled
+  refunded
+}
+
+enum status_product {
+  draft
+  active
+  archived
+}
