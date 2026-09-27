@@ -42,6 +42,7 @@ services:
       - ./scripts:/app/scripts
       - ./database:/app/database
       - ./server.js:/app/server.js
+      - ./prisma:/app/prisma
       - /app/node_modules
     depends_on:
       postgres:
