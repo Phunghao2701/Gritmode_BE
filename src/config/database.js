@@ -2,16 +2,19 @@ import pkg from "pg";
 
 const { Pool } = pkg;
 
+if (!process.env.POSTGRES_URL) {
+  throw new Error("[Database Error] Biến môi trường POSTGRES_URL chưa được cấu hình");
+}
+
 // Kiểm tra xem database đang trỏ tới localhost/docker network hay không (Local Development Mode).
 // Mục đích: Tránh lỗi kết nối SSL khi chạy database PostgreSQL cục bộ/container (vì local thường không cài đặt SSL).
 const isLocal =
   process.env.POSTGRES_SSL === "false" ||
   process.env.NODE_ENV === "development" ||
-  (process.env.POSTGRES_URL &&
-    (process.env.POSTGRES_URL.includes("localhost") ||
-      process.env.POSTGRES_URL.includes("127.0.0.1") ||
-      process.env.POSTGRES_URL.includes("@postgres:") ||
-      process.env.POSTGRES_URL.includes("sslmode=disable")));
+  process.env.POSTGRES_URL.includes("localhost") ||
+  process.env.POSTGRES_URL.includes("127.0.0.1") ||
+  process.env.POSTGRES_URL.includes("@postgres:") ||
+  process.env.POSTGRES_URL.includes("sslmode=disable");
 
 const pool = new Pool({
   connectionString: process.env.POSTGRES_URL,

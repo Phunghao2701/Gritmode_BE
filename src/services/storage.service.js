@@ -1,3 +1,4 @@
+import "dotenv/config";
 import {
   S3Client,
   PutObjectCommand,
@@ -84,7 +85,7 @@ export const createStorageService = ({ config = getConfig() } = {}) => {
 
     await s3Client.send(command);
 
-    const publicBase = (config.minioPublicUrl || endpoint).replace(/\/$/, "");
+    const publicBase = config.minioPublicUrl.replace(/\/$/, "");
     const publicUrl = `${publicBase}/${bucket}/${key}`;
 
     return {

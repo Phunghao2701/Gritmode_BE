@@ -18,7 +18,10 @@ export const requireAuth = async (req, res, next) => {
     }
 
     const token = authHeader.split(" ")[1];
-    const secret = process.env.JWT_SECRET || "default-jwt-secret-key";
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      throw new Error("JWT_SECRET chưa được cấu hình trong biến môi trường");
+    }
 
     let payload;
     try {
@@ -75,7 +78,9 @@ export const createAuthenticate = ({ secret, users = userRepository }) => async 
   try {
     const [scheme, token] = (req.headers.authorization || "").split(" ");
     if (scheme !== "Bearer" || !token) throw unauthorized("AUTH_REQUIRED", "Yêu cầu đăng nhập");
-    const payload = verifyAccessToken(token, { secret: secret || process.env.JWT_SECRET || "default-jwt-secret-key" });
+    const jwtSecret = secret || process.env.JWT_SECRET;
+    if (!jwtSecret) throw new Error("JWT_SECRET chưa được cấu hình trong biến môi trường");
+    const payload = verifyAccessToken(token, { secret: jwtSecret });
     const user = await users.findById(payload.sub || payload.user_id);
     if (!user) throw unauthorized("TOKEN_INVALID", "Access token không hợp lệ");
     if (user.status !== "active") throw forbidden("ACCOUNT_UNAVAILABLE", "Tài khoản không hoạt động");

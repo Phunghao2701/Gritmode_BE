@@ -11,8 +11,7 @@ export const getRedisClient = () => {
   const redisUrl = process.env.REDIS_URL;
 
   if (!redisUrl) {
-    console.warn('[Redis] REDIS_URL not configured. Running without Redis cache.');
-    return null;
+    throw new Error('[Redis Error] Biến môi trường REDIS_URL chưa được cấu hình');
   }
 
   try {
@@ -22,7 +21,7 @@ export const getRedisClient = () => {
       lazyConnect: false,
       retryStrategy(times) {
         if (times > 5) {
-          console.warn('[Redis] Max reconnect attempts reached. Redis caching temporarily disabled.');
+          console.error('[Redis] Max reconnect attempts reached. Unable to connect to Redis server.');
           return null; // Stop retrying
         }
         return Math.min(times * 1000, 3000);
@@ -38,7 +37,7 @@ export const getRedisClient = () => {
     });
 
     redisClient.on('error', (err) => {
-      console.warn(`⚠️ [Redis] Connection warning: ${err.message}`);
+      console.error(`❌ [Redis] Connection error: ${err.message}`);
     });
 
     redisClient.on('close', () => {
@@ -48,7 +47,7 @@ export const getRedisClient = () => {
     return redisClient;
   } catch (error) {
     console.error(`❌ [Redis] Failed to initialize client: ${error.message}`);
-    return null;
+    throw error;
   }
 };
 

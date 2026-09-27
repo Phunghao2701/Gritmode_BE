@@ -30,8 +30,12 @@ export const sortDataByKey = (data = {}) => {
  * Create payOS HMAC-SHA256 signature
  */
 export const createPayOSSignature = (data = {}, checksumKey = "") => {
+  const key = checksumKey || process.env.PAYOS_CHECKSUM_KEY;
+  if (!key) {
+    throw new Error("[payOS Error] PAYOS_CHECKSUM_KEY chưa được cấu hình");
+  }
   const queryString = sortDataByKey(data);
-  return createHmac("sha256", checksumKey || process.env.PAYOS_CHECKSUM_KEY || "")
+  return createHmac("sha256", key)
     .update(queryString)
     .digest("hex");
 };
@@ -75,13 +79,20 @@ export const callPayOSCreatePaymentLink = async ({
     return null;
   }
 
+  const targetCancelUrl = cancelUrl || process.env.PAYOS_CANCEL_URL;
+  const targetReturnUrl = returnUrl || process.env.PAYOS_RETURN_URL;
+
+  if (!targetCancelUrl || !targetReturnUrl) {
+    throw new Error("[payOS Error] Thiếu URL chuyển hướng PAYOS_CANCEL_URL hoặc PAYOS_RETURN_URL");
+  }
+
   const cleanDescription = (description || `ORDER${orderCode}`).slice(0, 25);
   const dataToSign = {
     amount: Number(amount),
-    cancelUrl: cancelUrl || process.env.PAYOS_CANCEL_URL || "http://localhost:5173/checkout",
+    cancelUrl: targetCancelUrl,
     description: cleanDescription,
     orderCode: Number(orderCode),
-    returnUrl: returnUrl || process.env.PAYOS_RETURN_URL || "http://localhost:5173/payment/result",
+    returnUrl: targetReturnUrl,
   };
 
   const signature = createPayOSSignature(dataToSign, checksumKey);
