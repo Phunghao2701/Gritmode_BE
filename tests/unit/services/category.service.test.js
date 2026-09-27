@@ -1,13 +1,17 @@
-import { describe, test } from "node:test";
+import { describe, test, after } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildCategoryTree,
   hasCategoryCycle,
   createCategoryService,
 } from "../../../src/services/category.service.js";
+import { redis } from "../../../src/config/redis.js";
 
 describe("category service", () => {
-  const transaction = async (fn) => fn({});
+  after(() => {
+    if (redis) redis.disconnect();
+  });
+  const transaction = async (fn) => fn({ query: async () => ({ rows: [] }) });
 
   test("buildCategoryTree builds hierarchical nested tree in memory", () => {
     const flatList = [
@@ -183,10 +187,11 @@ describe("category service", () => {
       categories: {
         findById: async (id) => (id === 1 ? { category_id: 1 } : null),
         updateStatus: async (id, status) => ({ category_id: id, is_active: status }),
+        delete: async () => {},
       },
       audits: {
         record: async ({ action }) => {
-          if (action === "disable_category") deletedAudit = true;
+          if (action === "delete_category") deletedAudit = true;
           if (action === "enable_category") statusAudit = true;
         },
       },

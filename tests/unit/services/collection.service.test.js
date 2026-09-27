@@ -1,4 +1,4 @@
-import { describe, test } from "node:test";
+import { describe, test, after } from "node:test";
 import assert from "node:assert/strict";
 import {
   isCollectionVisible,
@@ -16,9 +16,13 @@ import {
   removeProductFromCollection,
   reorderCollectionProducts,
 } from "../../../src/services/collection.service.js";
+import { redis } from "../../../src/config/redis.js";
 
 describe("collection service", () => {
-  const transaction = async (fn) => fn({});
+  after(() => {
+    if (redis) redis.disconnect();
+  });
+  const transaction = async (fn) => fn({ query: async () => ({ rows: [] }) });
 
   test("isCollectionVisible checks active state and time bounds", () => {
     const now = new Date("2026-07-01T12:00:00Z");
@@ -186,10 +190,11 @@ describe("collection service", () => {
       collections: {
         findById: async (id) => (id === 1 ? { collection_id: 1 } : null),
         updateStatus: async (id, status) => ({ collection_id: id, is_active: status }),
+        delete: async () => {},
       },
       audits: {
         record: async ({ action }) => {
-          if (action === "disable_collection") deletedAudit = true;
+          if (action === "delete_collection") deletedAudit = true;
           if (action === "enable_collection") statusAudit = true;
         },
       },
