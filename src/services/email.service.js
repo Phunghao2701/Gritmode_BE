@@ -165,6 +165,29 @@ export const createEmailService = ({
 
   // Bộ điều hướng gửi email (Dispatch multi-strategy)
   const dispatchSend = async ({ to, subject, html, text }) => {
+    // 0. Ở môi trường development và có SMTP_HOST (Mailpit) -> Bắt email vào Mailpit local
+    if (env.NODE_ENV === "development" && env.SMTP_HOST) {
+      try {
+        const localTransport = transportFactory({
+          host: env.SMTP_HOST,
+          port: Number.parseInt(env.SMTP_PORT || "1025", 10),
+          secure: false,
+          ignoreTLS: true,
+        });
+        const info = await localTransport.sendMail({
+          from: `"Gritmode Dev" <${env.EMAIL_USER || "dev@gritmode.vn"}>`,
+          to,
+          subject,
+          html,
+          text,
+        });
+        logger.info(`[email] Đã chuyển email vào Mailpit local (${env.SMTP_HOST}:${env.SMTP_PORT || 1025}): ${info.messageId}`);
+        return { success: true, message_id: info.messageId };
+      } catch (err) {
+        logger.warn("[email] Gửi qua Mailpit dev thất bại, thử các kênh cloud tiếp theo:", err.message);
+      }
+    }
+
     // 1. Nếu có RESEND_API_KEY -> ưu tiên gửi qua Resend HTTPS API (Nhanh và ổn định nhất trên Render)
     if (env.RESEND_API_KEY?.trim()) {
       try {

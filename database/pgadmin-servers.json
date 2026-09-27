@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Gritmode PostgreSQL (Local Docker)",
+      "Group": "Servers",
+      "Port": 5432,
+      "Username": "postgres",
+      "Host": "postgres",
+      "SSLMode": "prefer",
+      "MaintenanceDB": "gritmode_db"
+    }
+  }
+}

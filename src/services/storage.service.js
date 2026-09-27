@@ -1,4 +1,11 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  CreateBucketCommand,
+  HeadBucketCommand,
+  PutBucketPolicyCommand,
+} from "@aws-sdk/client-s3";
 import crypto from "node:crypto";
 import { getConfig } from "../config/env.js";
 
@@ -18,6 +25,43 @@ export const createStorageService = ({ config = getConfig() } = {}) => {
     forcePathStyle: true,
   });
 
+  let bucketInitialized = false;
+
+  const ensureBucket = async (bucket = config.minioBucket) => {
+    if (bucketInitialized) return;
+    try {
+      await s3Client.send(new HeadBucketCommand({ Bucket: bucket }));
+      bucketInitialized = true;
+    } catch (err) {
+      if (
+        err.name === "NotFound" ||
+        err.name === "NoSuchBucket" ||
+        err.$metadata?.httpStatusCode === 404
+      ) {
+        try {
+          await s3Client.send(new CreateBucketCommand({ Bucket: bucket }));
+          const policy = JSON.stringify({
+            Version: "2012-10-17",
+            Statement: [
+              {
+                Effect: "Allow",
+                Principal: "*",
+                Action: ["s3:GetObject"],
+                Resource: [`arn:aws:s3:::${bucket}/*`],
+              },
+            ],
+          });
+          await s3Client.send(
+            new PutBucketPolicyCommand({ Bucket: bucket, Policy: policy })
+          );
+          bucketInitialized = true;
+        } catch (createErr) {
+          // Ignore concurrent creation
+        }
+      }
+    }
+  };
+
   const uploadFile = async ({
     buffer,
     originalName = "image.webp",
@@ -25,6 +69,8 @@ export const createStorageService = ({ config = getConfig() } = {}) => {
     folder = "products",
     bucket = config.minioBucket,
   }) => {
+    await ensureBucket(bucket);
+
     const ext = originalName.includes(".") ? originalName.split(".").pop() : "webp";
     const filename = `${Date.now()}-${crypto.randomUUID()}.${ext}`;
     const key = folder ? `${folder}/${filename}` : filename;
@@ -63,6 +109,7 @@ export const createStorageService = ({ config = getConfig() } = {}) => {
     s3Client,
     uploadFile,
     deleteFile,
+    ensureBucket,
   };
 };
 

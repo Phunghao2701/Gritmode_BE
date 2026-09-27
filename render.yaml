@@ -1,0 +1,58 @@
+services:
+  # ==========================================
+  # Gritmode Backend Web Service (Docker)
+  # ==========================================
+  - type: web
+    name: gritmode-be
+    env: docker
+    region: oregon
+    plan: starter
+    dockerfilePath: ./Dockerfile.prod
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: POSTGRES_URL
+        fromDatabase:
+          name: gritmode-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: gritmode-redis
+          property: connectionString
+      - key: FRONTEND_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 1d
+      - key: COOKIE_REFRESH_MAX_AGE
+        value: 2592000000
+      - key: RESEND_API_KEY
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+
+# ==========================================
+# Managed PostgreSQL Database
+# ==========================================
+databases:
+  - name: gritmode-postgres
+    region: oregon
+    plan: starter
+    databaseName: gritmode_db
+    user: gritmode_admin
+
+# ==========================================
+# Managed Redis (Key Value Store)
+# ==========================================
+keyvalues:
+  - name: gritmode-redis
+    region: oregon
+    plan: starter
+    ipAllowList: []

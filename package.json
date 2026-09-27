@@ -14,6 +14,7 @@
     "test:coverage": "node --test --test-isolation=none --experimental-test-coverage tests/**/*.test.js",
     "test:smoke": "node --test --test-isolation=none tests/integration/health.route.test.js",
     "db:migrate": "node scripts/migrate.js",
+    "db:sync:supabase": "node scripts/migrate-from-supabase.js",
     "db:schema:inspect": "node scripts/inspect-schema.js",
     "db:schema:check": "node scripts/check-repository-reads.js",
     "db:seed:products": "node scripts/seed-demo-products.js"
