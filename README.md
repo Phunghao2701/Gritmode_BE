@@ -26,11 +26,11 @@ Dưới đây là thông tin đăng nhập mặc định cho toàn bộ các d�
 - Node.js LTS (v20+ hoặc v22+) nếu muốn chạy lệnh trực tiếp trên máy host.
 
 ### Bước 1: Chuẩn bị biến môi trường
-Tạo file `.env` từ file mẫu dành cho Docker:
+Tạo file `.env` từ file mẫu:
 ```bash
-cp .env.docker.example .env
+cp .env.example .env
 ```
-*(Trên Windows PowerShell: `Copy-Item .env.docker.example .env`)*
+*(Trên Windows PowerShell: `Copy-Item .env.example .env`)*
 
 ### Bước 2: Khởi động toàn bộ hệ thống bằng Docker Compose
 ```bash
@@ -118,3 +118,21 @@ Trong file `render.yaml` đã được định nghĩa sẵn toàn bộ hạ tầ
   node --test tests/unit/services/storage.service.test.js
   node --test tests/unit/utils/image-upload.test.js
   ```
+
+---
+
+## 🛡️ 6. Kiến Trúc Fail-Fast & Không Fallback (Zero Silent Fallbacks)
+
+Dự án tuân thủ nghiêm ngặt nguyên lý **Fail-Fast**:
+1. **Khởi động Server (`server.js` & `validateRuntimeConfig`)**:
+   - Mọi biến môi trường cốt lõi (`PORT`, `NODE_ENV`, `POSTGRES_URL`, `REDIS_URL`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `COOKIE_REFRESH_MAX_AGE`, `FRONTEND_URL`, `MINIO_ENDPOINT`, `MINIO_PORT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET`, `MINIO_PUBLIC_URL`) đều được xác thực nghiêm ngặt khi server bắt đầu khởi động.
+   - Nếu thiếu bất kỳ biến nào, server dừng ngay lập tức kèm mã lỗi rõ ràng, tuyệt đối không dùng giá trị mặc định ngầm (default fallback).
+2. **Cơ sở dữ liệu & Cache**:
+   - Sử dụng duy nhất 1 database PostgreSQL cục bộ (`POSTGRES_URL`). Không có cơ chế tự đoán hoặc nhảy fallback sang Supabase khi chạy cục bộ.
+   - `REDIS_URL` bắt buộc phải cấu hình. Nếu Redis không khả dụng hoặc thiếu biến cấu hình, hệ thống báo lỗi rõ ràng thay vì âm thầm tắt cache.
+3. **Lưu trữ ảnh (MinIO / S3)**:
+   - `MINIO_PUBLIC_URL` được sử dụng trực tiếp để phát sinh URL ảnh cho client, không fallback về hostname nội bộ docker container.
+4. **Cổng thanh toán & Bảo mật**:
+   - `JWT_SECRET`, `PAYOS_CHECKSUM_KEY`, `PAYOS_RETURN_URL`, `PAYOS_CANCEL_URL` bắt buộc có giá trị. Tuyệt đối không có fallback chuỗi rỗng hay hardcoded domain `localhost:5173`.
+5. **Dịch vụ Email (Mailpit & Cloud Drivers)**:
+   - Trong môi trường Development có cấu hình `SMTP_HOST`, email được chuyển trực tiếp vào Mailpit. Nếu cấu hình thiếu hoặc gửi thất bại, ứng dụng ném lỗi trực tiếp thay vì âm thầm thử các kênh cloud với API key hết hạn.
