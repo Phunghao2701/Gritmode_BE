@@ -12,6 +12,15 @@ export const getConfig = () => ({
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "15m",
   refreshTtlMs: integer(process.env.COOKIE_REFRESH_MAX_AGE, 30 * 24 * 60 * 60 * 1000),
   googleClientId: process.env.GOOGLE_CLIENT_ID || process.env.CLIENT_ID,
+  minioEndpoint: process.env.MINIO_ENDPOINT || "localhost",
+  minioPort: integer(process.env.MINIO_PORT, 9000),
+  minioUseSsl: process.env.MINIO_USE_SSL === "true",
+  minioAccessKey: process.env.MINIO_ACCESS_KEY || process.env.MINIO_ROOT_USER || "admin",
+  minioSecretKey: process.env.MINIO_SECRET_KEY || process.env.MINIO_ROOT_PASSWORD || "password123",
+  minioBucket: process.env.MINIO_BUCKET || "gritmode-products",
+  minioPublicUrl: process.env.MINIO_PUBLIC_URL || "http://localhost:9000",
+  smtpHost: process.env.SMTP_HOST || "localhost",
+  smtpPort: integer(process.env.SMTP_PORT, 1025),
 });
 
 export const validateRuntimeConfig = (config = getConfig()) => {

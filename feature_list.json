@@ -1,0 +1,46 @@
+[
+  {
+    "id": "phase-01-docker-compose-infra",
+    "title": "Docker Compose & Local Infrastructure",
+    "status": "passing",
+    "evidence": "docker compose config validated cleanly with 7 services (backend, postgres, redis, mailpit, adminer, minio, minio-init)",
+    "user_visible_behavior": "Developers can start backend, Postgres, Redis, Mailpit, Adminer, and MinIO with a single docker compose up command",
+    "verification_command": "docker compose config && docker compose ps",
+    "notes": "Covers stories: P1 Local Dev Compose, P2 Adminer UI",
+    "priority": "P1",
+    "blocked_by": []
+  },
+  {
+    "id": "phase-02-minio-storage-service",
+    "title": "MinIO Storage Service Integration",
+    "status": "active",
+    "evidence": "",
+    "user_visible_behavior": "Admin product image uploads are processed with Sharp WebP and saved directly to self-hosted MinIO bucket",
+    "verification_command": "npm run test:unit",
+    "notes": "Covers stories: P1 Product Image Upload via MinIO",
+    "priority": "P1",
+    "blocked_by": []
+  },
+  {
+    "id": "phase-03-db-migration-and-mailpit",
+    "title": "DB Migration Engine & Dev Mail Trapping",
+    "status": "not_started",
+    "evidence": "",
+    "user_visible_behavior": "Database schema migrations run sequentially and transactional email events are captured in Mailpit Web UI",
+    "verification_command": "node scripts/migrate.js",
+    "notes": "Covers stories: P1 Database Migrations, P2 Mailpit Email Trapping",
+    "priority": "P1",
+    "blocked_by": []
+  },
+  {
+    "id": "phase-04-production-dockerfile-render",
+    "title": "Production Dockerfile & Render Blueprint",
+    "status": "not_started",
+    "evidence": "",
+    "user_visible_behavior": "A minimal, hardened non-root production Docker image is built and ready for Render Web Service or VPS deployment",
+    "verification_command": "docker build -f Dockerfile.prod -t gritmode-be:prod .",
+    "notes": "Covers stories: P1 Minimal Secure Production Image, Render/VPS Blueprint",
+    "priority": "P1",
+    "blocked_by": []
+  }
+]

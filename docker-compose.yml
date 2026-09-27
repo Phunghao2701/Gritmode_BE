@@ -1,0 +1,147 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: gritmode-be
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=development
+      - PORT=5000
+      - POSTGRES_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-gritmode_db}
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET:-gritmode_super_secret_jwt_key_local_development_123456}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-1d}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
+      - MINIO_USE_SSL=false
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER:-admin}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD:-password123}
+      - MINIO_BUCKET=${MINIO_BUCKET:-gritmode-products}
+      - MINIO_PUBLIC_URL=http://localhost:9000
+      - SMTP_HOST=mailpit
+      - SMTP_PORT=1025
+    volumes:
+      - ./src:/app/src
+      - ./scripts:/app/scripts
+      - ./database:/app/database
+      - ./server.js:/app/server.js
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    networks:
+      - gritmode-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: gritmode-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-gritmode_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-gritmode_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gritmode-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: gritmode-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - gritmode-network
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: gritmode-mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI
+    networks:
+      - gritmode-network
+
+  adminer:
+    image: adminer:latest
+    container_name: gritmode-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    networks:
+      - gritmode-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: gritmode-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password123}
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # Web Console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gritmode-network
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: gritmode-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER:-admin} ${MINIO_ROOT_PASSWORD:-password123};
+      /usr/bin/mc mb --ignore-existing myminio/${MINIO_BUCKET:-gritmode-products};
+      /usr/bin/mc anonymous set download myminio/${MINIO_BUCKET:-gritmode-products};
+      echo 'MinIO bucket initialized successfully';
+      exit 0;
+      "
+    networks:
+      - gritmode-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+
+networks:
+  gritmode-network:
+    driver: bridge
