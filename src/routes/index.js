@@ -16,11 +16,14 @@ import adminUserRouter from "./admin-user.route.js";
 import adminDashboardRouter from "./admin-dashboard.route.js";
 import paymentRouter from "./payment.route.js";
 import uploadRouter from "./upload.route.js";
+import { publicBannerRouter, adminBannerRouter } from "./banner.route.js";
 
 const router = Router();
 router.get("/health", (req, res) => res.json({ success: true, code: "HEALTHY", message: "OK", data: { status: "up" } }));
 router.use("/auth", authRouter);
 router.use("/users", userRouter);
+router.use("/banners", publicBannerRouter);
+router.use("/admin/banners", adminBannerRouter);
 router.use("/products", productRouter);
 router.use("/admin/products", adminProductRouter);
 router.use("/admin", productOptionRouter);
