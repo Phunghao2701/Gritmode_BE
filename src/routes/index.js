@@ -17,6 +17,7 @@ import adminDashboardRouter from "./admin-dashboard.route.js";
 import paymentRouter from "./payment.route.js";
 import uploadRouter from "./upload.route.js";
 import { publicBannerRouter, adminBannerRouter } from "./banner.route.js";
+import adminNotificationRouter from "./admin-notification.route.js";
 
 const router = Router();
 router.get("/health", (req, res) => res.json({ success: true, code: "HEALTHY", message: "OK", data: { status: "up" } }));
@@ -41,6 +42,7 @@ router.use("/orders", orderRouter);
 router.use("/admin", adminOrderRouter);
 router.use("/admin/users", adminUserRouter);
 router.use("/admin/dashboard", adminDashboardRouter);
+router.use("/admin/notifications", adminNotificationRouter);
 router.use("/admin/uploads", uploadRouter);
 router.use("/payments", paymentRouter);
 
