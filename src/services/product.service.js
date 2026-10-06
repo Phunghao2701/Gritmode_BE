@@ -89,7 +89,7 @@ export const createProductService = ({
     if (!product || product.status_product !== PRODUCT_STATUS.ACTIVE) {
       throw notFound("PRODUCT_NOT_FOUND", "Không tìm thấy sản phẩm");
     }
-    return this.getProductById(product.product_id);
+    return products.findDetail(product.product_id, null, product);
   },
 
   async getAdminProductById(productId) {
