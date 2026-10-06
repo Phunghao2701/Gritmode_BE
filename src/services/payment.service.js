@@ -8,6 +8,7 @@ import {
   getPayOSPaymentLinkInfo,
 } from "../utils/payos.js";
 import { emailService } from "./email.service.js";
+import { notificationOutboxService } from "./notification-outbox.service.js";
 import logger from "../utils/logger.js";
 
 const VALID_COD_TRANSITIONS = {
@@ -21,6 +22,7 @@ export const createPaymentService = ({
   orders = orderRepository,
   checksumKey = process.env.PAYOS_CHECKSUM_KEY,
   emails = emailService,
+  notifications = null,
 } = {}) => ({
   /**
    * Validate COD payment transition
@@ -203,6 +205,12 @@ export const createPaymentService = ({
 
     // Idempotent: if already paid, return existing
     if (payment.status_payment === "paid") {
+      if (notifications?.enqueuePaymentConfirmation && orders.findAdminOrderById) {
+        const paidOrder = await orders.findAdminOrderById(payment.order_id, client);
+        if (paidOrder) {
+          await notifications.enqueuePaymentConfirmation({ order: paidOrder, payment, client });
+        }
+      }
       return payment;
     }
 
@@ -222,7 +230,9 @@ export const createPaymentService = ({
       : orders.findById
         ? await orders.findById(payment.order_id, client)
         : null;
-    if (order) {
+    if (order && notifications?.enqueuePaymentConfirmation) {
+      await notifications.enqueuePaymentConfirmation({ order, payment: updated, client });
+    } else if (order) {
       void emails.sendOrderConfirmationEmail({ ...order, payment: updated }).catch((error) => {
         logger.error(`[payment] Confirmation email failed for ${order.order_code}`, error);
       });
@@ -246,6 +256,13 @@ export const createPaymentService = ({
     let payment = await payments.findByOrderId(orderId, client);
     if (!payment) {
       throw notFound("PAYMENT_NOT_FOUND", "Không tìm thấy thông tin thanh toán");
+    }
+
+    if (payment.status_payment === "paid" && notifications?.enqueuePaymentConfirmation && orders.findAdminOrderById) {
+      const paidOrder = await orders.findAdminOrderById(orderId, client);
+      if (paidOrder) {
+        await notifications.enqueuePaymentConfirmation({ order: paidOrder, payment, client });
+      }
     }
 
     // Auto-sync with payOS if still pending (Supports local testing without Webhook)
@@ -272,6 +289,12 @@ export const createPaymentService = ({
           }
           if (updated) {
             payment = updated;
+            const paidOrder = orders.findAdminOrderById
+              ? await orders.findAdminOrderById(order.order_id, client)
+              : null;
+            if (paidOrder && notifications?.enqueuePaymentConfirmation) {
+              await notifications.enqueuePaymentConfirmation({ order: paidOrder, payment: updated, client });
+            }
           }
         }
       } catch (syncErr) {
@@ -347,7 +370,7 @@ export const createPaymentService = ({
   },
 });
 
-const defaultPaymentService = createPaymentService();
+const defaultPaymentService = createPaymentService({ notifications: notificationOutboxService });
 export const paymentService = defaultPaymentService;
 export const {
   createPayment,

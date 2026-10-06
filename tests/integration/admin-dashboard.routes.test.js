@@ -4,6 +4,7 @@ import request from "supertest";
 import { createAccessToken } from "../../src/utils/tokens.js";
 import { userRepository } from "../../src/repositories/user.repository.js";
 import pool from "../../src/config/database.js";
+import { invalidateDashboardCache } from "../../src/controllers/admin-dashboard.controller.js";
 
 process.env.JWT_SECRET ||= "integration-test-secret";
 const { default: app } = await import("../../src/app.js");
@@ -24,6 +25,7 @@ const customerToken = createAccessToken(
 
 describe("admin dashboard routes integration", () => {
   afterEach(() => {
+    invalidateDashboardCache();
     mock.restoreAll();
   });
 
@@ -51,6 +53,26 @@ describe("admin dashboard routes integration", () => {
     }));
 
     mock.method(pool, "query", async (sql) => {
+      if (sql.includes("order_stats")) {
+        return {
+          rows: [
+            {
+              revenue_this_month: 2500000,
+              revenue_last_month: 2000000,
+              total_orders: 15,
+              orders_this_month: 5,
+              orders_last_month: 4,
+              total_products: 20,
+              active_products: 18,
+              products_this_month: 3,
+              total_users: 50,
+              users_this_month: 10,
+              users_last_month: 8,
+              low_stock_count: 2,
+            },
+          ],
+        };
+      }
       if (sql.includes('"order"')) {
         return {
           rows: [
