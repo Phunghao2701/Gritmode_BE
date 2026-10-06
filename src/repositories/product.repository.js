@@ -225,9 +225,9 @@ export const productRepository = {
     };
   },
 
-  async findDetail(productId, client) {
+  async findDetail(productId, client, existingProduct = null) {
     const db = runner(client);
-    const product = await this.findById(productId, db);
+    const product = existingProduct || (await this.findById(productId, db));
     if (!product) return null;
 
     const [imagesRes, optionsRes, variantsRes, categoriesRes, collectionsRes] = await Promise.all([
