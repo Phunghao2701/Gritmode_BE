@@ -243,3 +243,8 @@ src/tests/
 !/src/tests/integration/orcidScan.route.test.js
 !/src/tests/integration/articleReferenceHydration.route.test.js
 
+.agents/
+.hs.json
+.mcp.json
+
+.env copy
