@@ -11,5 +11,6 @@ describe("health endpoint", () => {
     assert.equal(response.status, 200);
     assert.equal(response.body.code, "HEALTHY");
     assert.equal(response.body.data.status, "up");
+    assert.equal(response.headers["cache-control"], "no-store, max-age=0");
   });
 });

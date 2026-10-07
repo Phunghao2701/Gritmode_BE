@@ -4,6 +4,14 @@ import { createPaymentService } from "../../../src/services/payment.service.js";
 import { createPayOSSignature } from "../../../src/utils/payos.js";
 
 const checksumKey = "test_checksum_key_12345";
+const payos = {
+  create: async ({ orderCode }) => ({
+    checkoutUrl: `https://pay.payos.vn/${orderCode}`,
+    qrCode: `QR-${orderCode}`,
+    paymentLinkId: `link_${orderCode}`,
+  }),
+  get: async () => null,
+};
 
 describe("payOS payment service", () => {
   const sampleOrder = {
@@ -26,6 +34,7 @@ describe("payOS payment service", () => {
       orders: {
         findById: async () => sampleOrder,
       },
+      payos,
     });
 
     const result = await service.createPayOSPayment({
@@ -64,6 +73,7 @@ describe("payOS payment service", () => {
       orders: {
         findById: async () => sampleOrder,
       },
+      payos,
     });
 
     const result = await service.createPayOSPayment({
@@ -100,6 +110,7 @@ describe("payOS payment service", () => {
       orders: {
         findById: async () => sampleOrder,
       },
+      payos,
     });
 
     const result = await service.createPayOSPayment({
@@ -175,7 +186,7 @@ describe("payOS payment service", () => {
     };
 
     let updatedReference = null;
-    let emailedOrder = null;
+    let enqueuedOrder = null;
     const service = createPaymentService({
       payments: {
         findByPayOSOrderCode: async () => existingPayment,
@@ -193,7 +204,7 @@ describe("payOS payment service", () => {
         updateOrderStatus: async () => {},
         findAdminOrderById: async () => ({ order_id: 100, order_code: "ORD-100", email_order: "buyer@example.com", items: [], address: {} }),
       },
-      emails: { sendOrderConfirmationEmail: async (order) => { emailedOrder = order; } },
+      notifications: { enqueuePaymentConfirmation: async ({ order }) => { enqueuedOrder = order; } },
       checksumKey,
     });
 
@@ -201,8 +212,7 @@ describe("payOS payment service", () => {
     assert.ok(result);
     assert.equal(result.status_payment, "paid");
     assert.equal(updatedReference, "FT260831");
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(emailedOrder.payment.status_payment, "paid");
+    assert.equal(enqueuedOrder.order_code, "ORD-100");
   });
 
   test("handlePayOSWebhook is idempotent for already paid payment", async () => {

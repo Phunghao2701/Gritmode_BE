@@ -226,9 +226,7 @@ export const createAdminOrderService = ({
         }
 
         // 1. Commit reserved inventory (stock -= qty, reserved -= qty)
-        const items = orders.findOrderItems
-          ? await orders.findOrderItems(orderId, client)
-          : fullOrder?.items || [];
+        const items = await orders.findOrderItems(orderId, client);
 
         for (const item of items) {
           const qty = Number(item.quantity_order_item || item.quantity);
@@ -238,7 +236,7 @@ export const createAdminOrderService = ({
         }
 
         // 2. Mark COD as paid if applicable
-        if (fullOrder?.payment?.payment_method === "cod" && payments.markCodAsPaid) {
+        if (fullOrder?.payment?.payment_method === "cod") {
           await payments.markCodAsPaid(orderId, client);
         }
 
@@ -295,9 +293,7 @@ export const createAdminOrderService = ({
         }
 
         // 1. Release inventory reservation (reserved -= qty)
-        const items = orders.findOrderItems
-          ? await orders.findOrderItems(orderId, client)
-          : fullOrder?.items || [];
+        const items = await orders.findOrderItems(orderId, client);
 
         for (const item of items) {
           const qty = Number(item.quantity_order_item || item.quantity);
@@ -307,9 +303,7 @@ export const createAdminOrderService = ({
         }
 
         // 2. Cancel pending payment
-        if (payments.cancelPendingPaymentByOrderId) {
-          await payments.cancelPendingPaymentByOrderId(orderId, client);
-        }
+        await payments.cancelPendingPaymentByOrderId(orderId, client);
 
         // 3. Update order status
         const updated = await orders.updateOrderStatus(orderId, "cancelled", client);

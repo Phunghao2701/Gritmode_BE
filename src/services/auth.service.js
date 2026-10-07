@@ -10,7 +10,6 @@ import { withTransaction } from "../config/database.js";
 import { getConfig } from "../config/env.js";
 import { OAuth2Client } from "google-auth-library";
 import axios from "axios";
-import logger from "../utils/logger.js";
 
 const config = getConfig();
 const googleClient = new OAuth2Client(config.googleClientId);
@@ -100,10 +99,10 @@ export const createAuthService = ({
 
       await emailOtps.create({ email, otpHash, expiredAt });
 
-      // Gửi email bất đồng bộ trong background để phản hồi ngay lập tức cho UI (< 30ms)
-      Promise.resolve(emails.sendOtpEmail({ email, otp })).catch((err) => {
-        logger.error(`[auth] Background OTP email delivery failed for ${email}:`, err);
-      });
+      await emails.sendOtpEmail(
+        { email, otp },
+        { idempotencyKey: `otp:${email}:${otpHash}` },
+      );
 
       return { expired_in: 300 };
     },
@@ -204,16 +203,7 @@ export const createAuthService = ({
         };
       }
 
-      // Fallback path
-      const existing = await sessions.findActiveByHash(hashed);
-      if (!existing) throw unauthorized("REFRESH_TOKEN_INVALID", "Refresh token không hợp lệ hoặc đã hết hạn");
-      const user = await users.findById(existing.user_id);
-      if (!user) throw unauthorized("REFRESH_TOKEN_INVALID", "Refresh token không hợp lệ");
-      assertActive(user);
-      return transaction(async (client) => {
-        await sessions.revoke(existing.user_session_id, client);
-        return issueSession(user, context, client);
-      });
+      throw new AppError(500, "SESSION_REPOSITORY_UNSUPPORTED", "Session repository không hỗ trợ refresh token rotation");
     },
 
     /**

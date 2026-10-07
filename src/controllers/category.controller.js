@@ -8,7 +8,7 @@ export const createCategoryController = ({
   getCategories: async (req, res, next) => {
     try {
       const data = await service.getCategories();
-      res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=1800");
+      res.setHeader("Cache-Control", "no-store, max-age=0");
       return ok(res, data);
     } catch (e) {
       next(e);
@@ -28,7 +28,7 @@ export const createCategoryController = ({
     try {
       const categoryId = validatePositiveId(req.params.categoryId);
       const data = await service.getCategoryById(categoryId, req.user?.role === "admin");
-      res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=1800");
+      res.setHeader("Cache-Control", "no-store, max-age=0");
       return ok(res, data);
     } catch (e) {
       next(e);
@@ -39,7 +39,7 @@ export const createCategoryController = ({
     try {
       const categoryId = validatePositiveId(req.params.categoryId);
       const data = await service.getProductsByCategory(categoryId, req.query);
-      res.setHeader("Cache-Control", "public, max-age=120, stale-while-revalidate=600");
+      res.setHeader("Cache-Control", "no-store, max-age=0");
       return ok(res, data);
     } catch (e) {
       next(e);

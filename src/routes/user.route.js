@@ -80,6 +80,8 @@ router.use(requireAuth);
 router.get("/me", getProfile);
 router.patch("/me", validateBody(validateUpdateProfile), updateProfile);
 
+router.patch("/me/password", validateBody(validatePasswordChange), changePassword);
+
 /**
  * @swagger
  * /users/me/password:
@@ -111,7 +113,6 @@ router.patch("/me", validateBody(validateUpdateProfile), updateProfile);
  *       401:
  *         description: Chưa đăng nhập hoặc thiếu session_id hợp lệ
  */
-router.patch("/me/password", validateBody(validatePasswordChange), changePassword);
 
 /**
  * @swagger

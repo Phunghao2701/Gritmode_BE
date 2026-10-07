@@ -21,30 +21,8 @@ export const categoryRepository = {
       WHERE COALESCE(c.is_active, true) = true
       ORDER BY COALESCE(c.position_category, 0) ASC, c.name_category ASC
     `;
-    try {
-      const { rows } = await runner(client).query(query);
-      return rows;
-    } catch {
-      // Fallback for basic schema
-      const fallbackQuery = `
-        SELECT 
-          c.category_id,
-          c.name_category,
-          c.parent_category_id,
-          c.parent_category_id AS parent_id,
-          LOWER(REPLACE(c.name_category, ' ', '-')) AS slug_category,
-          NULL AS description_category,
-          0 AS position_category,
-          true AS is_active,
-          c.created_at,
-          c.updated_at,
-          (SELECT COUNT(*)::int FROM product_category pc WHERE pc.category_id = c.category_id) AS product_count
-        FROM category c
-        ORDER BY c.category_id ASC
-      `;
-      const { rows } = await runner(client).query(fallbackQuery);
-      return rows;
-    }
+    const { rows } = await runner(client).query(query);
+    return rows;
   },
 
   async listAll(filter = {}, client) {
@@ -64,29 +42,8 @@ export const categoryRepository = {
       FROM category c
       ORDER BY COALESCE(c.position_category, 0) ASC, c.name_category ASC
     `;
-    try {
-      const { rows } = await runner(client).query(query);
-      return rows;
-    } catch {
-      const fallbackQuery = `
-        SELECT 
-          c.category_id,
-          c.name_category,
-          c.parent_category_id,
-          c.parent_category_id AS parent_id,
-          LOWER(REPLACE(c.name_category, ' ', '-')) AS slug_category,
-          NULL AS description_category,
-          0 AS position_category,
-          true AS is_active,
-          c.created_at,
-          c.updated_at,
-          (SELECT COUNT(*)::int FROM product_category pc WHERE pc.category_id = c.category_id) AS product_count
-        FROM category c
-        ORDER BY c.category_id ASC
-      `;
-      const { rows } = await runner(client).query(fallbackQuery);
-      return rows;
-    }
+    const { rows } = await runner(client).query(query);
+    return rows;
   },
 
   async findById(categoryId, client) {
@@ -105,28 +62,8 @@ export const categoryRepository = {
       FROM category c
       WHERE c.category_id = $1
     `;
-    try {
-      const { rows } = await runner(client).query(query, [categoryId]);
-      return rows[0] || null;
-    } catch {
-      const fallbackQuery = `
-        SELECT 
-          c.category_id,
-          c.name_category,
-          c.parent_category_id,
-          c.parent_category_id AS parent_id,
-          LOWER(REPLACE(c.name_category, ' ', '-')) AS slug_category,
-          NULL AS description_category,
-          0 AS position_category,
-          true AS is_active,
-          c.created_at,
-          c.updated_at
-        FROM category c
-        WHERE c.category_id = $1
-      `;
-      const { rows } = await runner(client).query(fallbackQuery, [categoryId]);
-      return rows[0] || null;
-    }
+    const { rows } = await runner(client).query(query, [categoryId]);
+    return rows[0] || null;
   },
 
   async findBySlug(slug, client) {
@@ -145,28 +82,8 @@ export const categoryRepository = {
       FROM category c
       WHERE LOWER(TRIM(COALESCE(NULLIF(c.slug_category, ''), REPLACE(c.name_category, ' ', '-')))) = LOWER(TRIM($1))
     `;
-    try {
-      const { rows } = await runner(client).query(query, [slug]);
-      return rows[0] || null;
-    } catch {
-      const fallbackQuery = `
-        SELECT 
-          c.category_id,
-          c.name_category,
-          c.parent_category_id,
-          c.parent_category_id AS parent_id,
-          LOWER(REPLACE(c.name_category, ' ', '-')) AS slug_category,
-          NULL AS description_category,
-          0 AS position_category,
-          true AS is_active,
-          c.created_at,
-          c.updated_at
-        FROM category c
-        WHERE LOWER(TRIM(REPLACE(c.name_category, ' ', '-'))) = LOWER(TRIM($1))
-      `;
-      const { rows } = await runner(client).query(fallbackQuery, [slug]);
-      return rows[0] || null;
-    }
+    const { rows } = await runner(client).query(query, [slug]);
+    return rows[0] || null;
   },
 
   async create(data, client) {
@@ -183,35 +100,15 @@ export const categoryRepository = {
       ) VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
       RETURNING category_id, name_category, parent_category_id, slug_category, description_category, position_category, is_active, created_at, updated_at
     `;
-    try {
-      const { rows } = await runner(client).query(query, [
-        data.name_category,
-        data.parent_category_id || data.parent_id || null,
-        data.slug_category || null,
-        data.description_category || null,
-        data.position_category || 0,
-        data.is_active !== undefined ? data.is_active : true,
-      ]);
-      return rows[0];
-    } catch {
-      // Basic schema fallback
-      const fallbackQuery = `
-        INSERT INTO category (name_category, parent_category_id, created_at, updated_at)
-        VALUES ($1, $2, NOW(), NOW())
-        RETURNING category_id, name_category, parent_category_id, created_at, updated_at
-      `;
-      const { rows } = await runner(client).query(fallbackQuery, [
-        data.name_category,
-        data.parent_category_id || data.parent_id || null,
-      ]);
-      return {
-        ...rows[0],
-        slug_category: data.slug_category || rows[0].name_category.toLowerCase().replace(/\s+/g, "-"),
-        description_category: data.description_category || null,
-        position_category: data.position_category || 0,
-        is_active: data.is_active !== undefined ? data.is_active : true,
-      };
-    }
+    const { rows } = await runner(client).query(query, [
+      data.name_category,
+      data.parent_category_id || data.parent_id || null,
+      data.slug_category || null,
+      data.description_category || null,
+      data.position_category || 0,
+      data.is_active !== undefined ? data.is_active : true,
+    ]);
+    return rows[0];
   },
 
   async update(categoryId, data, client) {
@@ -264,12 +161,8 @@ export const categoryRepository = {
       WHERE category_id = $2
       RETURNING category_id, name_category, is_active, updated_at
     `;
-    try {
-      const { rows } = await runner(client).query(query, [isActive, categoryId]);
-      return rows[0] || null;
-    } catch {
-      return { category_id: categoryId, is_active: isActive };
-    }
+    const { rows } = await runner(client).query(query, [isActive, categoryId]);
+    return rows[0] || null;
   },
 
   async delete(categoryId, client) {

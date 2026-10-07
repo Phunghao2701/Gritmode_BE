@@ -203,12 +203,8 @@ export const productVariantRepository = {
     const query = `SELECT
       EXISTS (SELECT 1 FROM cart_item WHERE product_variant_id = $1)
       OR EXISTS (SELECT 1 FROM order_item WHERE product_variant_id = $1) AS has_ref`;
-    try {
-      const { rows } = await runner(client).query(query, [variantId]);
-      return Boolean(rows[0]?.has_ref ?? (Number(rows[0]?.count) > 0));
-    } catch {
-      return false;
-    }
+    const { rows } = await runner(client).query(query, [variantId]);
+    return Boolean(rows[0].has_ref);
   },
 
   async delete(variantId, client) {

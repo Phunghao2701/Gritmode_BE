@@ -1,5 +1,5 @@
 import jwt from "jsonwebtoken";
-import { unauthorized, forbidden } from "../errors/app-error.js";
+import { AppError, unauthorized, forbidden } from "../errors/app-error.js";
 import { verifyAccessToken } from "../utils/tokens.js";
 import { userRepository } from "../repositories/user.repository.js";
 import logger from "../utils/logger.js";
@@ -18,7 +18,10 @@ export const requireAuth = async (req, res, next) => {
     }
 
     const token = authHeader.split(" ")[1];
-    const secret = process.env.JWT_SECRET || "default-jwt-secret-key";
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      return next(new AppError(500, "AUTH_CONFIG_MISSING", "Thiếu cấu hình JWT_SECRET"));
+    }
 
     let payload;
     try {
@@ -75,7 +78,9 @@ export const createAuthenticate = ({ secret, users = userRepository }) => async 
   try {
     const [scheme, token] = (req.headers.authorization || "").split(" ");
     if (scheme !== "Bearer" || !token) throw unauthorized("AUTH_REQUIRED", "Yêu cầu đăng nhập");
-    const payload = verifyAccessToken(token, { secret: secret || process.env.JWT_SECRET || "default-jwt-secret-key" });
+    const runtimeSecret = secret || process.env.JWT_SECRET;
+    if (!runtimeSecret) throw new AppError(500, "AUTH_CONFIG_MISSING", "Thiếu cấu hình JWT_SECRET");
+    const payload = verifyAccessToken(token, { secret: runtimeSecret });
     const user = await users.findById(payload.sub || payload.user_id);
     if (!user) throw unauthorized("TOKEN_INVALID", "Access token không hợp lệ");
     if (user.status !== "active") throw forbidden("ACCOUNT_UNAVAILABLE", "Tài khoản không hoạt động");

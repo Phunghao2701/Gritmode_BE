@@ -1,4 +1,4 @@
-import { conflict, notFound, badRequest } from "../errors/app-error.js";
+import { AppError, conflict, notFound, badRequest } from "../errors/app-error.js";
 import { paymentRepository } from "../repositories/payment.repository.js";
 import { orderRepository } from "../repositories/order.repository.js";
 import {
@@ -7,9 +7,7 @@ import {
   callPayOSCreatePaymentLink,
   getPayOSPaymentLinkInfo,
 } from "../utils/payos.js";
-import { emailService } from "./email.service.js";
 import { notificationOutboxService } from "./notification-outbox.service.js";
-import logger from "../utils/logger.js";
 
 const VALID_COD_TRANSITIONS = {
   pending: ["paid", "cancelled"],
@@ -21,9 +19,29 @@ export const createPaymentService = ({
   payments = paymentRepository,
   orders = orderRepository,
   checksumKey = process.env.PAYOS_CHECKSUM_KEY,
-  emails = emailService,
+  payos = {
+    create: callPayOSCreatePaymentLink,
+    get: getPayOSPaymentLinkInfo,
+  },
   notifications = null,
-} = {}) => ({
+} = {}) => {
+  const assertOrderAccess = (order, user, guestInfo = {}) => {
+    if (order.user_id) {
+      if (!user?.user_id || order.user_id !== user.user_id) {
+        throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
+      }
+      return;
+    }
+
+    const guestEmail = String(guestInfo.email || "").trim().toLowerCase();
+    const guestPhone = String(guestInfo.phone || "").replace(/\D/g, "").replace(/^84/, "0");
+    const orderPhone = String(order.phone_order || "").replace(/\D/g, "").replace(/^84/, "0");
+    if (!guestEmail || !guestPhone || guestEmail !== String(order.email_order || "").trim().toLowerCase() || guestPhone !== orderPhone) {
+      throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
+    }
+  };
+
+  return {
   /**
    * Validate COD payment transition
    */
@@ -43,9 +61,7 @@ export const createPaymentService = ({
    * Create COD payment for order
    */
   async createCodPayment({ order, total }, client) {
-    const existing = payments.findActivePaymentByOrderId
-      ? await payments.findActivePaymentByOrderId(order.order_id, client)
-      : null;
+    const existing = await payments.findActivePaymentByOrderId(order.order_id, client);
 
     if (existing) {
       return existing;
@@ -89,9 +105,7 @@ export const createPaymentService = ({
       );
     }
 
-    return payments.completeCodPayment
-      ? payments.completeCodPayment(orderId, client)
-      : payments.markCodAsPaid(orderId, client);
+    return payments.completeCodPayment(orderId, client);
   },
 
   /**
@@ -102,9 +116,7 @@ export const createPaymentService = ({
     if (!payment) return null;
 
     if (payment.payment_method === "cod" && payment.status_payment === "pending") {
-      return payments.cancelCodPayment
-        ? payments.cancelCodPayment(orderId, client)
-        : payments.cancelPendingPaymentByOrderId(orderId, client);
+      return payments.cancelCodPayment(orderId, client);
     }
     return payment;
   },
@@ -119,18 +131,14 @@ export const createPaymentService = ({
     }
 
     // Verify ownership
-    if (order.user_id && user && order.user_id !== user.user_id) {
-      throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
-    }
+    assertOrderAccess(order, user, guestInfo);
 
     if (order.status_order !== "pending") {
       throw conflict("ORDER_CANNOT_BE_PAID", `Không thể thanh toán đơn hàng đang ở trạng thái ${order.status_order}`);
     }
 
     // Check active payment attempt
-    const activePayment = payments.findActivePaymentByOrderId
-      ? await payments.findActivePaymentByOrderId(orderId, client)
-      : await payments.findByOrderId(orderId, client);
+    const activePayment = await payments.findActivePaymentByOrderId(orderId, client);
 
     if (activePayment) {
       if (activePayment.status_payment === "paid") {
@@ -155,15 +163,18 @@ export const createPaymentService = ({
     const payosOrderCode = generatePayOSOrderCode();
     const expiredAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
-    const payosResult = await callPayOSCreatePaymentLink({
+    const payosResult = await payos.create({
       orderCode: payosOrderCode,
       amount: Number(order.total_order),
       description: `ORDER${order.order_id}`,
     });
 
-    const checkoutUrl = payosResult?.checkoutUrl || `https://pay.payos.vn/web/${payosOrderCode}`;
-    const qrCode = payosResult?.qrCode || `00020101021238540010A000000727012400069704220110${payosOrderCode}520459995303704540${order.total_order}5802VN62150811ORDER${order.order_id}6304`;
-    const paymentLinkId = payosResult?.paymentLinkId || `link_${payosOrderCode}`;
+    const checkoutUrl = payosResult?.checkoutUrl;
+    const qrCode = payosResult?.qrCode;
+    const paymentLinkId = payosResult?.paymentLinkId;
+    if (!checkoutUrl || !qrCode || !paymentLinkId) {
+      throw new AppError(502, "PAYOS_PROVIDER_FAILED", "PayOS trả về payment link không đầy đủ");
+    }
 
     return payments.createPayment(
       {
@@ -205,18 +216,10 @@ export const createPaymentService = ({
 
     // Idempotent: if already paid, return existing
     if (payment.status_payment === "paid") {
-      if (notifications?.enqueuePaymentConfirmation && orders.findAdminOrderById) {
-        const paidOrder = await orders.findAdminOrderById(payment.order_id, client);
-        if (paidOrder) {
-          await notifications.enqueuePaymentConfirmation({ order: paidOrder, payment, client });
-        }
-      }
       return payment;
     }
 
-    if (orders?.updateOrderStatus) {
-      await orders.updateOrderStatus(payment.order_id, "confirmed", client);
-    }
+    await orders.updateOrderStatus(payment.order_id, "confirmed", client);
 
     const updated = await payments.markPayOSAsPaid(
       {
@@ -225,17 +228,12 @@ export const createPaymentService = ({
       },
       client,
     );
-    const order = orders.findAdminOrderById
-      ? await orders.findAdminOrderById(payment.order_id, client)
-      : orders.findById
-        ? await orders.findById(payment.order_id, client)
-        : null;
-    if (order && notifications?.enqueuePaymentConfirmation) {
+    const order = await orders.findAdminOrderById(payment.order_id, client);
+    if (order) {
+      if (!notifications?.enqueuePaymentConfirmation) {
+        throw new AppError(500, "NOTIFICATION_OUTBOX_UNAVAILABLE", "Notification outbox chưa được cấu hình");
+      }
       await notifications.enqueuePaymentConfirmation({ order, payment: updated, client });
-    } else if (order) {
-      void emails.sendOrderConfirmationEmail({ ...order, payment: updated }).catch((error) => {
-        logger.error(`[payment] Confirmation email failed for ${order.order_code}`, error);
-      });
     }
     return updated;
   },
@@ -249,16 +247,17 @@ export const createPaymentService = ({
       throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
     }
 
-    if (order.user_id && userOrGuest?.user_id && order.user_id !== userOrGuest.user_id) {
-      throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
-    }
+    assertOrderAccess(order, userOrGuest?.user_id ? userOrGuest : null, userOrGuest?.guestInfo || userOrGuest);
 
     let payment = await payments.findByOrderId(orderId, client);
     if (!payment) {
       throw notFound("PAYMENT_NOT_FOUND", "Không tìm thấy thông tin thanh toán");
     }
 
-    if (payment.status_payment === "paid" && notifications?.enqueuePaymentConfirmation && orders.findAdminOrderById) {
+    if (payment.status_payment === "paid") {
+      if (!notifications?.enqueuePaymentConfirmation) {
+        throw new AppError(500, "NOTIFICATION_OUTBOX_UNAVAILABLE", "Notification outbox chưa được cấu hình");
+      }
       const paidOrder = await orders.findAdminOrderById(orderId, client);
       if (paidOrder) {
         await notifications.enqueuePaymentConfirmation({ order: paidOrder, payment, client });
@@ -271,8 +270,7 @@ export const createPaymentService = ({
       payment.status_payment === "pending" &&
       payment.payos_order_code
     ) {
-      try {
-        const payosInfo = await getPayOSPaymentLinkInfo(payment.payos_order_code);
+      const payosInfo = await payos.get(payment.payos_order_code);
         if (
           payosInfo &&
           (payosInfo.status === "PAID" || Number(payosInfo.amountPaid) >= Number(payment.amount_payment))
@@ -284,22 +282,18 @@ export const createPaymentService = ({
             },
             client,
           );
-          if (orders?.updateOrderStatus) {
-            await orders.updateOrderStatus(order.order_id, "confirmed", client);
-          }
+          await orders.updateOrderStatus(order.order_id, "confirmed", client);
           if (updated) {
             payment = updated;
-            const paidOrder = orders.findAdminOrderById
-              ? await orders.findAdminOrderById(order.order_id, client)
-              : null;
-            if (paidOrder && notifications?.enqueuePaymentConfirmation) {
+            const paidOrder = await orders.findAdminOrderById(order.order_id, client);
+            if (paidOrder) {
+              if (!notifications?.enqueuePaymentConfirmation) {
+                throw new AppError(500, "NOTIFICATION_OUTBOX_UNAVAILABLE", "Notification outbox chưa được cấu hình");
+              }
               await notifications.enqueuePaymentConfirmation({ order: paidOrder, payment: updated, client });
             }
           }
         }
-      } catch (syncErr) {
-        // Fallback gracefully to current DB state
-      }
     }
 
     return payment;
@@ -314,9 +308,7 @@ export const createPaymentService = ({
       throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
     }
 
-    if (order.user_id && userOrGuest?.user_id && order.user_id !== userOrGuest.user_id) {
-      throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
-    }
+    assertOrderAccess(order, userOrGuest?.user_id ? userOrGuest : null, userOrGuest?.guestInfo || userOrGuest);
 
     const payment = await payments.findByOrderId(orderId, client);
     if (!payment) {
@@ -342,15 +334,18 @@ export const createPaymentService = ({
       const payosOrderCode = generatePayOSOrderCode();
       const expiredAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
-      const payosResult = await callPayOSCreatePaymentLink({
+       const payosResult = await payos.create({
         orderCode: payosOrderCode,
         amount: Number(total),
         description: `ORDER${order.order_id}`,
       });
 
-      const checkoutUrl = payosResult?.checkoutUrl || `https://pay.payos.vn/web/${payosOrderCode}`;
-      const qrCode = payosResult?.qrCode || `00020101021238540010A000000727012400069704220110${payosOrderCode}520459995303704540${total}5802VN62150811ORDER${order.order_id}6304`;
-      const paymentLinkId = payosResult?.paymentLinkId || `link_${payosOrderCode}`;
+       const checkoutUrl = payosResult?.checkoutUrl;
+       const qrCode = payosResult?.qrCode;
+       const paymentLinkId = payosResult?.paymentLinkId;
+       if (!checkoutUrl || !qrCode || !paymentLinkId) {
+         throw new AppError(502, "PAYOS_PROVIDER_FAILED", "PayOS trả về payment link không đầy đủ");
+       }
 
       return payments.createPayment(
         {
@@ -367,8 +362,11 @@ export const createPaymentService = ({
         client,
       );
     }
+
+    throw badRequest("UNSUPPORTED_PAYMENT_METHOD", `Phương thức thanh toán không được hỗ trợ: ${paymentMethod}`);
   },
-});
+  };
+};
 
 const defaultPaymentService = createPaymentService({ notifications: notificationOutboxService });
 export const paymentService = defaultPaymentService;

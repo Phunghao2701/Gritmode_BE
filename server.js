@@ -1,5 +1,6 @@
 import "dotenv/config";
 import dns from "node:dns";
+import { validateRuntimeConfig, getConfig } from "./src/config/env.js";
 import app from "./src/app.js";
 import { startNotificationWorker } from "./src/services/notification-dispatcher.service.js";
 
@@ -8,7 +9,8 @@ if (dns.setDefaultResultOrder) {
   dns.setDefaultResultOrder("ipv4first");
 }
 
-const PORT = process.env.PORT || 5000;
+const config = validateRuntimeConfig();
+const PORT = config.port;
 
 const server = app.listen(PORT, () => {
   console.log(`🚀 Server đang chạy tại: http://localhost:${PORT}`);
