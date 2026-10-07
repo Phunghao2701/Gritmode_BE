@@ -57,6 +57,7 @@ describe("product HTTP contract", () => {
     assert.equal(res.body.success, true);
     assert.equal(res.body.data.items.length, 1);
     assert.equal(res.body.data.pagination.total, 1);
+    assert.match(res.headers["cache-control"], /^public, max-age=/);
   });
 
   test("public product listing validates query parameters", async () => {

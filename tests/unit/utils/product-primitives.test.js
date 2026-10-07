@@ -124,6 +124,26 @@ describe("product validation primitives", () => {
     assert.ok(result.errors.some((error) => error.field === "variants[1].option_values.Color"));
   });
 
+  test("validateCreateFullProduct accepts hidden option values", () => {
+    const result = validateCreateFullProduct({
+      name_product: "Hidden Size Tee",
+      options: [
+        { name_option: "Size", values: [{ value_option: "S", is_hidden: true }, "M"] },
+      ],
+      variants: [
+        { sku: "TEE-S", price: 450000, quantity_stock: 0, option_values: { Size: "S" } },
+      ],
+      category_ids: [2],
+      primary_category_id: 2,
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.value.options[0].values, [
+      { value_option: "S", is_hidden: true },
+      { value_option: "M", is_hidden: false },
+    ]);
+  });
+
   test("requireRole middleware allows authorized roles and denies unauthorized", () => {
     const middleware = requireRole("admin");
 

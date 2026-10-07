@@ -367,14 +367,13 @@ describe("auth service (Passwordless Email OTP)", () => {
 
       const service = createAuthService({
         sessions: {
-          findActiveByHash: async (hash) => {
-            if (hash === validHash) return { user_session_id: 5, user_id: "u1" };
-            return null;
-          },
-          revoke: async (id) => {
+          findActiveByHashWithUser: async (hash) => (hash === validHash
+            ? { session: { user_session_id: 5, user_id: "u1" }, user: baseUser }
+            : null),
+          rotate: async (id) => {
             revokedSessionId = id;
+            return { user_session_id: id };
           },
-          create: async () => ({ user_session_id: 7 }),
         },
         users: {
           findById: async (id) => (id === "u1" ? baseUser : null),
@@ -391,7 +390,7 @@ describe("auth service (Passwordless Email OTP)", () => {
 
     test("throws 401 when refresh token missing or invalid", async () => {
       const service = createAuthService({
-        sessions: { findActiveByHash: async () => null },
+        sessions: { findActiveByHashWithUser: async () => null, rotate: async () => null },
         tokenOptions: baseOptions,
         transaction,
       });

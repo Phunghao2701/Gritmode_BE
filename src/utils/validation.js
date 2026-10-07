@@ -536,18 +536,23 @@ export const validateCreateFullProduct = (input = {}) => {
                 errors.push({ field: `${field}.values`, message: 'Mỗi option phải có ít nhất một giá trị' });
             } else {
                 option.values.forEach((rawValue, valueIndex) => {
-                    if (!requiredString(rawValue, 1, 100)) {
+                    const valueInput = typeof rawValue === 'string' ? { value_option: rawValue } : rawValue;
+                    if (!valueInput || typeof valueInput !== 'object' || !requiredString(valueInput.value_option, 1, 100)) {
                         errors.push({ field: `${field}.values[${valueIndex}]`, message: 'Giá trị option phải từ 1 đến 100 ký tự' });
                         return;
                     }
-                    const value = rawValue.trim();
+                    if (valueInput.is_hidden !== undefined && !isBoolean(valueInput.is_hidden)) {
+                        errors.push({ field: `${field}.values[${valueIndex}].is_hidden`, message: 'is_hidden phải là boolean' });
+                        return;
+                    }
+                    const value = valueInput.value_option.trim();
                     const valueKey = value.toLowerCase();
                     if (valueKeys.has(valueKey)) {
                         errors.push({ field: `${field}.values[${valueIndex}]`, message: 'Giá trị trong cùng option không được trùng nhau' });
                         return;
                     }
                     valueKeys.add(valueKey);
-                    values.push(value);
+                    values.push({ value_option: value, is_hidden: Boolean(valueInput.is_hidden) });
                 });
             }
             optionNames.set(nameKey, { name, valueKeys });
@@ -822,6 +827,9 @@ export const validateCreateOptionValue = (input = {}) => {
     if (!requiredString(input.value_option, 1, 100)) {
         errors.push({ field: 'value_option', message: 'Giá trị Option bắt buộc từ 1 đến 100 ký tự' });
     }
+    if (input.is_hidden !== undefined && !isBoolean(input.is_hidden)) {
+        errors.push({ field: 'is_hidden', message: 'is_hidden phải là boolean' });
+    }
 
     if (errors.length) return { ok: false, errors };
 
@@ -829,6 +837,7 @@ export const validateCreateOptionValue = (input = {}) => {
         ok: true,
         value: {
             value_option: input.value_option.trim(),
+            is_hidden: Boolean(input.is_hidden),
         },
     };
 };
@@ -845,6 +854,9 @@ export const validateUpdateOptionValue = (input = {}) => {
     if (input.value_option === undefined || !requiredString(input.value_option, 1, 100)) {
         errors.push({ field: 'value_option', message: 'Giá trị Option bắt buộc từ 1 đến 100 ký tự' });
     }
+    if (input.is_hidden !== undefined && !isBoolean(input.is_hidden)) {
+        errors.push({ field: 'is_hidden', message: 'is_hidden phải là boolean' });
+    }
 
     if (errors.length) return { ok: false, errors };
 
@@ -852,6 +864,7 @@ export const validateUpdateOptionValue = (input = {}) => {
         ok: true,
         value: {
             value_option: input.value_option.trim(),
+            is_hidden: Boolean(input.is_hidden),
         },
     };
 };

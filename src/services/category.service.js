@@ -6,6 +6,20 @@ import { withTransaction } from "../config/database.js";
 import { slugify } from "../utils/validation.js";
 import { getProducts } from "./product.service.js";
 import { redisService } from "./redis.service.js";
+import logger from "../utils/logger.js";
+
+const invalidateCategoryCaches = async () => {
+  try {
+    await Promise.all([
+      redisService.delByPattern("categories:*"),
+      redisService.delByPattern("products:*")
+    ]);
+  } catch (error) {
+    // The database transaction is already committed. Cache cleanup must not
+    // turn a successful admin mutation into a false 5xx response.
+    logger.warn("[category-cache] invalidate failed", error.message);
+  }
+};
 
 export const buildCategoryTree = (categories = []) => {
   const map = new Map();
@@ -128,7 +142,7 @@ export const createCategoryService = ({
       }
     }
 
-    return transaction(async (client) => {
+    const created = await transaction(async (client) => {
       const created = await categories.create({
         ...data,
         slug_category: slug,
@@ -144,10 +158,10 @@ export const createCategoryService = ({
         }, client);
       }
 
-      await redisService.delByPattern("categories:*");
-      await redisService.delByPattern("products:*");
       return created;
     });
+    await invalidateCategoryCaches();
+    return created;
   },
 
   async updateCategory(categoryId, data, userId) {
@@ -180,7 +194,7 @@ export const createCategoryService = ({
       }
     }
 
-    return transaction(async (client) => {
+    const updated = await transaction(async (client) => {
       const payload = {
         ...data,
         ...(slug ? { slug_category: slug } : {}),
@@ -198,17 +212,17 @@ export const createCategoryService = ({
         }, client);
       }
 
-      await redisService.delByPattern("categories:*");
-      await redisService.delByPattern("products:*");
       return updated;
     });
+    await invalidateCategoryCaches();
+    return updated;
   },
 
   async deleteCategory(categoryId, userId) {
     const existing = await categories.findById(categoryId);
     if (!existing) throw notFound("CATEGORY_NOT_FOUND", "Không tìm thấy danh mục");
 
-    return transaction(async (client) => {
+    await transaction(async (client) => {
       // 1. Detach child categories
       await client.query(`UPDATE category SET parent_category_id = NULL WHERE parent_category_id = $1`, [categoryId]);
       // 2. Remove product relations
@@ -226,16 +240,15 @@ export const createCategoryService = ({
         }, client);
       }
 
-      await redisService.delByPattern("categories:*");
-      await redisService.delByPattern("products:*");
     });
+    await invalidateCategoryCaches();
   },
 
   async updateCategoryStatus(categoryId, isActive, userId) {
     const existing = await categories.findById(categoryId);
     if (!existing) throw notFound("CATEGORY_NOT_FOUND", "Không tìm thấy danh mục");
 
-    return transaction(async (client) => {
+    const updated = await transaction(async (client) => {
       const updated = await categories.updateStatus(categoryId, isActive, client);
       if (audits?.record) {
         await audits.record({
@@ -249,6 +262,8 @@ export const createCategoryService = ({
       }
       return updated;
     });
+    await invalidateCategoryCaches();
+    return updated;
   },
 
   async assignProductCategory(productId, payload, userId) {
@@ -261,7 +276,7 @@ export const createCategoryService = ({
         if (!cat) throw notFound("CATEGORY_NOT_FOUND", `Không tìm thấy danh mục ${item.category_id}`);
       }
 
-      return transaction(async (client) => {
+      const result = await transaction(async (client) => {
         for (const item of payload.categories) {
           await categories.assignProduct(productId, item.category_id, Boolean(item.is_primary), client);
           if (item.is_primary) {
@@ -281,6 +296,8 @@ export const createCategoryService = ({
 
         return categories.findProductCategories(productId, client);
       });
+      await invalidateCategoryCaches();
+      return result;
     }
 
     // Single category assignment
@@ -292,7 +309,7 @@ export const createCategoryService = ({
       throw conflict("PRODUCT_CATEGORY_EXISTS", "Sản phẩm đã thuộc danh mục này");
     }
 
-    return transaction(async (client) => {
+    const result = await transaction(async (client) => {
       const assigned = await categories.assignProduct(productId, payload.category_id, Boolean(payload.is_primary), client);
       if (payload.is_primary) {
         await categories.setPrimaryCategory(productId, payload.category_id, client);
@@ -310,6 +327,8 @@ export const createCategoryService = ({
 
       return categories.findProductCategories(productId, client);
     });
+    await invalidateCategoryCaches();
+    return result;
   },
 
   async removeProductCategory(productId, categoryId, userId) {
@@ -324,7 +343,7 @@ export const createCategoryService = ({
       throw notFound("PRODUCT_CATEGORY_NOT_FOUND", "Sản phẩm không thuộc danh mục này");
     }
 
-    return transaction(async (client) => {
+    await transaction(async (client) => {
       await categories.removeProduct(productId, categoryId, client);
       if (audits?.record) {
         await audits.record({
@@ -335,6 +354,7 @@ export const createCategoryService = ({
         }, client);
       }
     });
+    await invalidateCategoryCaches();
   },
 
   async setPrimaryCategory(productId, categoryId, userId) {
@@ -346,7 +366,7 @@ export const createCategoryService = ({
       throw notFound("PRODUCT_CATEGORY_NOT_FOUND", "Sản phẩm không thuộc danh mục này");
     }
 
-    return transaction(async (client) => {
+    const result = await transaction(async (client) => {
       await categories.setPrimaryCategory(productId, categoryId, client);
       if (audits?.record) {
         await audits.record({
@@ -359,6 +379,8 @@ export const createCategoryService = ({
       }
       return categories.findProductCategories(productId, client);
     });
+    await invalidateCategoryCaches();
+    return result;
   },
 });
 

@@ -295,23 +295,12 @@ export const voucherRepository = {
 
   async hasOrderReferences(voucherId, client) {
     const query = `
-      SELECT (
-        EXISTS (
-          SELECT 1 FROM information_schema.tables WHERE table_name = 'order' OR table_name = 'orders'
-        ) AND EXISTS (
-          SELECT 1 FROM "order" WHERE voucher_id = $1
-        )
+      SELECT EXISTS (
+        SELECT 1 FROM "order" WHERE voucher_id = $1
       ) AS has_ref
     `;
-    try {
-      const { rows } = await runner(client).query(query, [voucherId]);
-      if (rows[0]?.has_ref !== undefined) {
-        return Boolean(rows[0].has_ref);
-      }
-      return Boolean(Number(rows[0]?.count || 0) > 0);
-    } catch {
-      return false;
-    }
+    const { rows } = await runner(client).query(query, [voucherId]);
+    return Boolean(rows[0].has_ref);
   },
 
   async incrementUsage(voucherId, client) {

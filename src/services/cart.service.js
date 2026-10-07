@@ -65,9 +65,7 @@ const activeCart = async (owner, client, { create = false } = {}) => {
 };
 
 const availableFor = async (variantId, client) => {
-  const inventory = cartRepository.lockInventory
-    ? await cartRepository.lockInventory(variantId, client)
-    : await inventoryRepository.findByVariantId(variantId, client);
+  const inventory = await cartRepository.lockInventory(variantId, client);
   if (!inventory) throw notFound("INVENTORY_NOT_FOUND", "Không tìm thấy tồn kho cho biến thể này");
   return Number(inventory.quantity_available);
 };

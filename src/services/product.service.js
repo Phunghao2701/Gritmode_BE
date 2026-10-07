@@ -10,6 +10,14 @@ import { collectionRepository } from "../repositories/collection.repository.js";
 import { inventoryRepository } from "../repositories/inventory.repository.js";
 import { PRODUCT_STATUS } from "../constants/product.js";
 
+const normalizeOptionValueInput = (rawValue) => {
+  if (typeof rawValue === "string") return { value_option: rawValue, is_hidden: false };
+  return {
+    value_option: rawValue?.value_option || "",
+    is_hidden: Boolean(rawValue?.is_hidden),
+  };
+};
+
 export const createProductService = ({
   products = productRepository,
   audit = auditRepository,
@@ -179,12 +187,17 @@ export const createProductService = ({
       for (const optionInput of input.options) {
         const createdOption = await options.create(product.product_id, optionInput, client);
         const createdValues = await Promise.all(
-          optionInput.values.map((value) =>
-            options.createValue(createdOption.product_option_id, { value_option: value }, client)
+          optionInput.values.map((rawValue) =>
+            options.createValue(
+              createdOption.product_option_id,
+              normalizeOptionValueInput(rawValue),
+              client,
+            )
           )
         );
         createdValues.forEach((createdValue, idx) => {
-          valueIdByReference.set(`${optionInput.name_option.toLowerCase()}\u0000${optionInput.values[idx].toLowerCase()}`, Number(createdValue.product_option_value_id));
+          const valueName = normalizeOptionValueInput(optionInput.values[idx]).value_option;
+          valueIdByReference.set(`${optionInput.name_option.toLowerCase()}\u0000${valueName.toLowerCase()}`, Number(createdValue.product_option_value_id));
         });
         createdOptions.push({ ...createdOption, values: createdValues });
       }
@@ -295,11 +308,16 @@ export const createProductService = ({
       for (const optionInput of input.options) {
         let option = await options.findByNameAndProduct(productId, optionInput.name_option, client);
         if (!option) option = await options.create(productId, optionInput, client);
-        for (const value of optionInput.values) {
-          let optionValue = await options.findValueByNameAndOption(option.product_option_id, value, client);
-          if (!optionValue) optionValue = await options.createValue(option.product_option_id, { value_option: value }, client);
+        for (const rawValue of optionInput.values) {
+          const valueInput = normalizeOptionValueInput(rawValue);
+          let optionValue = await options.findValueByNameAndOption(option.product_option_id, valueInput.value_option, client);
+          if (!optionValue) {
+            optionValue = await options.createValue(option.product_option_id, valueInput, client);
+          } else {
+            optionValue = await options.updateValue(optionValue.product_option_value_id, valueInput, client);
+          }
           valueIdByReference.set(
-            `${optionInput.name_option.toLowerCase()}\u0000${value.toLowerCase()}`,
+            `${optionInput.name_option.toLowerCase()}\u0000${valueInput.value_option.toLowerCase()}`,
             Number(optionValue.product_option_value_id),
           );
         }
@@ -380,54 +398,6 @@ export const createProductService = ({
         );
       }
       return deleted;
-    });
-  },
-
-  async publishProductLegacy(productId, adminUserId) {
-    return transaction(async (client) => {
-      const existing = await products.findById(productId, client);
-      if (!existing) {
-        throw notFound("PRODUCT_NOT_FOUND", "Không tìm thấy sản phẩm");
-      }
-      const updated = await products.updateStatus(productId, PRODUCT_STATUS.ACTIVE, client);
-      if (audit?.log) {
-        await audit.log(
-          {
-            userId: adminUserId,
-            action: "publish_product",
-            entityName: "product",
-            entityId: productId,
-            oldData: existing,
-            newData: updated,
-          },
-          client,
-        );
-      }
-      return updated;
-    });
-  },
-
-  async archiveProductLegacy(productId, adminUserId) {
-    return transaction(async (client) => {
-      const existing = await products.findById(productId, client);
-      if (!existing) {
-        throw notFound("PRODUCT_NOT_FOUND", "Không tìm thấy sản phẩm");
-      }
-      const updated = await products.updateStatus(productId, PRODUCT_STATUS.ARCHIVED, client);
-      if (audit?.log) {
-        await audit.log(
-          {
-            userId: adminUserId,
-            action: "archive_product",
-            entityName: "product",
-            entityId: productId,
-            oldData: existing,
-            newData: updated,
-          },
-          client,
-        );
-      }
-      return updated;
     });
   },
 

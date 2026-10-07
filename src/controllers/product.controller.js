@@ -14,17 +14,18 @@ export const clearProductMemoryCache = () => {
   memCacheProducts.clear();
 };
 
+export const invalidateProductCache = async () => {
+  clearProductMemoryCache();
+  await Promise.all([
+    redisService.delByPattern("products:*"),
+    redisService.delByPattern("admin:products:*"),
+    redisService.delByPattern("dashboard:*"),
+  ]);
+};
+
 export const createProductController = ({ service = productService } = {}) => ({
   getProductMeta: async (req, res, next) => {
     try {
-      const now = Date.now();
-      const memHit = memCacheProducts.get("products:meta");
-      if (memHit && memHit.expiry > now) {
-        res.setHeader("X-Cache", "MEM-HIT");
-        res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=1800");
-        return ok(res, memHit.data, { message: "Lấy metadata sản phẩm thành công" });
-      }
-
       const { data, isCached } = await redisService.getOrSet("products:meta", async () => {
         const [categories, collections] = await Promise.all([
           categoryRepository.listActive ? categoryRepository.listActive() : [],
@@ -33,12 +34,8 @@ export const createProductController = ({ service = productService } = {}) => ({
         return { categories, collections };
       }, 1800);
 
-      if (data) {
-        memCacheProducts.set("products:meta", { data, expiry: now + MEM_TTL_PRODUCT_LIST });
-      }
-
       if (isCached) res.setHeader("X-Cache", "HIT");
-      res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=1800");
+      res.setHeader("Cache-Control", "no-store, max-age=0");
       return ok(res, data, { message: "Lấy metadata sản phẩm thành công" });
     } catch (e) {
       next(e);
@@ -53,7 +50,7 @@ export const createProductController = ({ service = productService } = {}) => ({
       const memHit = memCacheProducts.get(cacheKey);
       if (memHit && memHit.expiry > now) {
         res.setHeader("X-Cache", "MEM-HIT");
-        res.setHeader("Cache-Control", "public, max-age=120, stale-while-revalidate=600");
+        res.setHeader("Cache-Control", "no-store, max-age=0");
         return ok(res, memHit.data, { message: "Products retrieved successfully" });
       }
 
@@ -67,7 +64,7 @@ export const createProductController = ({ service = productService } = {}) => ({
       }
 
       if (isCached) res.setHeader("X-Cache", "HIT");
-      res.setHeader("Cache-Control", "public, max-age=120, stale-while-revalidate=600");
+      res.setHeader("Cache-Control", "no-store, max-age=0");
       return ok(res, data, { message: "Products retrieved successfully" });
     } catch (e) {
       next(e);
@@ -94,7 +91,7 @@ export const createProductController = ({ service = productService } = {}) => ({
       const memHit = memCacheProducts.get(cacheKey);
       if (memHit && memHit.expiry > now) {
         res.setHeader("X-Cache", "MEM-HIT");
-        res.setHeader("Cache-Control", "public, max-age=120, stale-while-revalidate=600");
+        res.setHeader("Cache-Control", "no-store");
         return ok(res, memHit.data, { message: "Product retrieved successfully" });
       }
 
@@ -117,7 +114,7 @@ export const createProductController = ({ service = productService } = {}) => ({
       }
 
       if (isCached) res.setHeader("X-Cache", "HIT");
-      res.setHeader("Cache-Control", "public, max-age=120, stale-while-revalidate=600");
+      res.setHeader("Cache-Control", "no-store");
       return ok(res, data, { message: "Product retrieved successfully" });
     } catch (e) {
       next(e);

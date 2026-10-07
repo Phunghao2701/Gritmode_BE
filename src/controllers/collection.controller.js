@@ -8,7 +8,9 @@ export const createCollectionController = ({
   getCollections: async (req, res, next) => {
     try {
       const data = await service.getCollections();
-      res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=1800");
+      // Collection navigation is managed from the admin and must not keep a
+      // stale browser/proxy response after a collection is created or updated.
+      res.setHeader("Cache-Control", "no-store, max-age=0");
       return ok(res, data);
     } catch (e) {
       next(e);
@@ -28,7 +30,7 @@ export const createCollectionController = ({
     try {
       const collectionId = validatePositiveId(req.params.collectionId);
       const data = await service.getCollectionById(collectionId, req.user?.role === "admin");
-      res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=1800");
+      res.setHeader("Cache-Control", "no-store, max-age=0");
       return ok(res, data);
     } catch (e) {
       next(e);
@@ -49,6 +51,7 @@ export const createCollectionController = ({
     try {
       const collectionId = validatePositiveId(req.params.collectionId);
       const data = await service.getProductsByCollection(collectionId, req.query, req.user?.role === "admin");
+      res.setHeader("Cache-Control", "no-store, max-age=0");
       return ok(res, data);
     } catch (e) {
       next(e);

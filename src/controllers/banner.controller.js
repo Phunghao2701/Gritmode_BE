@@ -5,7 +5,7 @@ export const createBannerController = ({ service = bannerService } = {}) => ({
   getActiveHero: async (req, res, next) => {
     try {
       const data = await service.getActiveHeroData();
-      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Cache-Control", "public, max-age=5, stale-while-revalidate=30");
       return ok(res, data, { message: "Lấy dữ liệu Hero trang chủ thành công" });
     } catch (err) {
       next(err);

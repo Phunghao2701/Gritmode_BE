@@ -186,34 +186,14 @@ export const productRepository = {
 
   async findBySlug(slug, client) {
     const normalizedSlug = slugifyProductName(slug);
-    try {
-      const { rows } = await runner(client).query(
-        `SELECT product_id, name_product, description, status_product, created_at, updated_at
-         FROM product
-         WHERE status_product = 'active' AND (slug_product = $1 OR slug_product = $2)
-         LIMIT 1`,
-        [slug, normalizedSlug],
-      );
-      if (rows[0]) {
-        return {
-          product_id: Number(rows[0].product_id),
-          name_product: rows[0].name_product,
-          description: rows[0].description,
-          status_product: rows[0].status_product,
-          created_at: rows[0].created_at,
-          updated_at: rows[0].updated_at,
-        };
-      }
-    } catch {
-      // slug_product column might not exist yet, fallback
-    }
-
     const { rows } = await runner(client).query(
       `SELECT product_id, name_product, description, status_product, created_at, updated_at
        FROM product
-       WHERE status_product = 'active'`,
+       WHERE status_product = 'active' AND (slug_product = $1 OR slug_product = $2)
+       LIMIT 1`,
+      [slug, normalizedSlug],
     );
-    const product = rows.find((row) => slugifyProductName(row.name_product) === normalizedSlug);
+    const product = rows[0];
     if (!product) return null;
     return {
       product_id: Number(product.product_id),
@@ -239,7 +219,7 @@ export const productRepository = {
         [productId],
       ),
       db.query(
-        `SELECT po.product_option_id, po.name_option, pov.product_option_value_id, pov.value_option
+        `SELECT po.product_option_id, po.name_option, pov.product_option_value_id, pov.value_option, pov.is_hidden
          FROM product_option po
          LEFT JOIN product_option_value pov ON pov.product_option_id = po.product_option_id
          WHERE po.product_id = $1
@@ -255,7 +235,7 @@ export const productRepository = {
                 i.inventory_id, COALESCE(i.quantity_stock, 0) AS quantity_stock,
                 COALESCE(i.quantity_reserved, 0) AS quantity_reserved,
                 COALESCE(i.quantity_stock - i.quantity_reserved, 0) AS quantity_available,
-                pov.product_option_value_id, pov.value_option, po.name_option
+                pov.product_option_value_id, pov.value_option, pov.is_hidden, po.name_option
          FROM product_variant pv
          LEFT JOIN inventory i ON i.product_variant_id = pv.product_variant_id
          LEFT JOIN product_variant_option_value pvov ON pvov.product_variant_id = pv.product_variant_id
@@ -298,6 +278,7 @@ export const productRepository = {
         optionsMap.get(optionId).values.push({
           product_option_value_id: Number(row.product_option_value_id),
           value_option: row.value_option,
+          is_hidden: Boolean(row.is_hidden),
         });
       }
     }
@@ -330,6 +311,7 @@ export const productRepository = {
           product_option_value_id: Number(row.product_option_value_id),
           name_option: row.name_option,
           value_option: row.value_option,
+          is_hidden: Boolean(row.is_hidden),
         });
       }
     }
@@ -556,16 +538,12 @@ export const productRepository = {
 
   async hasReferences(productId, client) {
     const db = runner(client);
-    try {
-      const { rowCount } = await db.query(
-        `SELECT 1 FROM order_item oi
-         JOIN product_variant pv ON pv.product_variant_id = oi.product_variant_id
-         WHERE pv.product_id = $1 LIMIT 1`,
-        [productId],
-      );
-      return rowCount > 0;
-    } catch {
-      return false;
-    }
+    const { rowCount } = await db.query(
+      `SELECT 1 FROM order_item oi
+       JOIN product_variant pv ON pv.product_variant_id = oi.product_variant_id
+       WHERE pv.product_id = $1 LIMIT 1`,
+      [productId],
+    );
+    return rowCount > 0;
   },
 };

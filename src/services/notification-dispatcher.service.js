@@ -25,19 +25,20 @@ export const createNotificationDispatcher = ({
     }
 
     const orderId = row.payload?.order_id;
-    const order = orderId && orders.findAdminOrderById
-      ? await orders.findAdminOrderById(orderId)
-      : null;
+    const order = orderId ? await orders.findAdminOrderById(orderId) : null;
 
     if (!order) {
       throw new Error(`Order ${orderId || "unknown"} not found for notification ${row.notification_outbox_id}`);
     }
 
-    await emails.sendOrderConfirmationEmail({
-      ...order,
-      email_order: order.email_order || row.destination,
-      payment: order.payment || null,
-    });
+    await emails.sendOrderConfirmationEmail(
+      {
+        ...order,
+        email_order: order.email_order || row.destination,
+        payment: order.payment || null,
+      },
+      { idempotencyKey: `notification:${row.dedupe_key}` },
+    );
   };
 
   const markSent = (id) => transaction((client) => outbox.markSent(id, client));

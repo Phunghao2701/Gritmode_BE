@@ -49,7 +49,7 @@ describe("banner.controller unit tests", () => {
     assert.equal(res.statusCode, 200);
     assert.equal(res.body.success, true);
     assert.deepEqual(res.body.data, heroData);
-    assert.ok(res.headers["Cache-Control"].includes("no-cache"));
+    assert.equal(res.headers["Cache-Control"], "public, max-age=5, stale-while-revalidate=30");
   });
 
   test("updateHeroContent updates title, description, marquee", async () => {

@@ -12,7 +12,8 @@ export const productOptionRepository = {
         po.created_at,
         po.updated_at,
         pov.product_option_value_id,
-        pov.value_option
+        pov.value_option,
+        pov.is_hidden
       FROM product_option po
       LEFT JOIN product_option_value pov ON po.product_option_id = pov.product_option_id
       WHERE po.product_id = $1
@@ -33,6 +34,7 @@ export const productOptionRepository = {
         optionsMap.get(row.product_option_id).values.push({
           product_option_value_id: row.product_option_value_id,
           value_option: row.value_option,
+          is_hidden: Boolean(row.is_hidden),
         });
       }
     }
@@ -99,7 +101,7 @@ export const productOptionRepository = {
 
   async findValueById(valueId, client) {
     const query = `
-      SELECT pov.product_option_value_id, pov.product_option_id, pov.value_option, po.product_id, pov.created_at, pov.updated_at
+      SELECT pov.product_option_value_id, pov.product_option_id, pov.value_option, pov.is_hidden, po.product_id, pov.created_at, pov.updated_at
       FROM product_option_value pov
       JOIN product_option po ON pov.product_option_id = po.product_option_id
       WHERE pov.product_option_value_id = $1
@@ -110,7 +112,7 @@ export const productOptionRepository = {
 
   async findValueByNameAndOption(optionId, valueOption, client) {
     const query = `
-      SELECT product_option_value_id, product_option_id, value_option, created_at, updated_at
+      SELECT product_option_value_id, product_option_id, value_option, is_hidden, created_at, updated_at
       FROM product_option_value
       WHERE product_option_id = $1 AND LOWER(TRIM(value_option)) = LOWER(TRIM($2))
     `;
@@ -118,24 +120,24 @@ export const productOptionRepository = {
     return rows[0] || null;
   },
 
-  async createValue(optionId, { value_option }, client) {
+  async createValue(optionId, { value_option, is_hidden = false }, client) {
     const query = `
-      INSERT INTO product_option_value (product_option_id, value_option, created_at, updated_at)
-      VALUES ($1, $2, NOW(), NOW())
-      RETURNING product_option_value_id, product_option_id, value_option, created_at, updated_at
+      INSERT INTO product_option_value (product_option_id, value_option, is_hidden, created_at, updated_at)
+      VALUES ($1, $2, $3, NOW(), NOW())
+      RETURNING product_option_value_id, product_option_id, value_option, is_hidden, created_at, updated_at
     `;
-    const { rows } = await runner(client).query(query, [optionId, value_option.trim()]);
+    const { rows } = await runner(client).query(query, [optionId, value_option.trim(), Boolean(is_hidden)]);
     return rows[0];
   },
 
-  async updateValue(valueId, { value_option }, client) {
+  async updateValue(valueId, { value_option, is_hidden = false }, client) {
     const query = `
       UPDATE product_option_value
-      SET value_option = $2, updated_at = NOW()
+      SET value_option = $2, is_hidden = $3, updated_at = NOW()
       WHERE product_option_value_id = $1
-      RETURNING product_option_value_id, product_option_id, value_option, created_at, updated_at
+      RETURNING product_option_value_id, product_option_id, value_option, is_hidden, created_at, updated_at
     `;
-    const { rows } = await runner(client).query(query, [valueId, value_option.trim()]);
+    const { rows } = await runner(client).query(query, [valueId, value_option.trim(), Boolean(is_hidden)]);
     return rows[0] || null;
   },
 

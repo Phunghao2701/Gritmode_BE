@@ -62,7 +62,7 @@ export const notificationOutboxRepository = {
     const { rows } = await runner(client).query(
       `
         WITH candidates AS (
-          SELECT notification_outbox_id
+          SELECT notification_outbox_id AS candidate_id
           FROM notification_outbox
           WHERE (
             (status IN ('pending', 'failed') AND next_attempt_at <= NOW())
@@ -79,7 +79,7 @@ export const notificationOutboxRepository = {
           attempt_count = outbox.attempt_count + 1,
           updated_at = NOW()
         FROM candidates
-        WHERE outbox.notification_outbox_id = candidates.notification_outbox_id
+        WHERE outbox.notification_outbox_id = candidates.candidate_id
         RETURNING ${outboxReturningColumns}
       `,
       [Math.max(1, Math.min(Number(limit) || 10, 100))],
@@ -92,7 +92,7 @@ export const notificationOutboxRepository = {
       `
         UPDATE notification_outbox
         SET status = 'sent', sent_at = NOW(), locked_at = NULL, updated_at = NOW()
-        WHERE notification_outbox_id = $1
+        WHERE notification_outbox_id = $1 AND status = 'processing'
         RETURNING ${outboxColumns}
       `,
       [notificationOutboxId],
@@ -110,7 +110,7 @@ export const notificationOutboxRepository = {
           next_attempt_at = COALESCE($4, next_attempt_at),
           locked_at = NULL,
           updated_at = NOW()
-        WHERE notification_outbox_id = $1
+        WHERE notification_outbox_id = $1 AND status = 'processing'
         RETURNING ${outboxColumns}
       `,
       [

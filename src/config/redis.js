@@ -11,8 +11,7 @@ export const getRedisClient = () => {
   const redisUrl = process.env.REDIS_URL;
 
   if (!redisUrl) {
-    console.warn('[Redis] REDIS_URL not configured. Running without Redis cache.');
-    return null;
+    throw new Error('[Redis] REDIS_URL is required');
   }
 
   try {
@@ -48,7 +47,7 @@ export const getRedisClient = () => {
     return redisClient;
   } catch (error) {
     console.error(`❌ [Redis] Failed to initialize client: ${error.message}`);
-    return null;
+    throw error;
   }
 };
 
