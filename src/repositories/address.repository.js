@@ -3,6 +3,7 @@ import pool from "../config/database.js";
 const runner = (client) => client || pool;
 const columns = `user_address_id, user_id, receiver_name_user_address, phone_user_address,
   address_line_user_address, ward_user_address, district_user_address, province_user_address,
+  province_code, commune_code, administrative_dataset_id,
   is_default, created_at, updated_at`;
 
 const fieldMap = {
@@ -18,6 +19,9 @@ const fieldMap = {
   district_user_address: "district_user_address",
   province: "province_user_address",
   province_user_address: "province_user_address",
+  province_code: "province_code",
+  commune_code: "commune_code",
+  administrative_dataset_id: "administrative_dataset_id",
   is_default: "is_default",
 };
 
@@ -61,14 +65,18 @@ export const addressRepository = {
     const ward = input.ward ?? input.ward_user_address ?? null;
     const district = input.district ?? input.district_user_address ?? null;
     const province = input.province ?? input.province_user_address ?? null;
+    const provinceCode = input.province_code ?? null;
+    const communeCode = input.commune_code ?? null;
+    const datasetId = input.administrative_dataset_id ?? null;
     const isDefault = Boolean(input.is_default);
 
     const { rows } = await runner(client).query(
       `INSERT INTO user_address (
         user_id, receiver_name_user_address, phone_user_address, address_line_user_address,
         ward_user_address, district_user_address, province_user_address, is_default, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()) RETURNING ${columns}`,
-      [userId, receiverName, phone, addressLine, ward, district, province, isDefault],
+        , province_code, commune_code, administrative_dataset_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW(), $9, $10, $11) RETURNING ${columns}`,
+      [userId, receiverName, phone, addressLine, ward, district, province, isDefault, provinceCode, communeCode, datasetId],
     );
     return rows[0];
   },

@@ -16,7 +16,8 @@
     "db:migrate": "node scripts/migrate.js",
     "db:schema:inspect": "node scripts/inspect-schema.js",
     "db:schema:check": "node scripts/check-repository-reads.js",
-    "db:seed:products": "node scripts/seed-demo-products.js"
+    "db:seed:products": "node scripts/seed-demo-products.js",
+    "db:sync:administrative": "node scripts/sync-administrative-data.js"
   },
   "keywords": [],
   "author": "",

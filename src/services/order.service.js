@@ -129,6 +129,9 @@ export const createOrderService = ({
         let ward = input.ward_order_address;
         let district = input.district_order_address;
         let province = input.province_order_address;
+        let provinceCode = input.province_code;
+        let communeCode = input.commune_code;
+        let administrativeDatasetId = input.administrative_dataset_id;
 
         if (context.user) {
           emailOrder = emailOrder || context.user.email;
@@ -145,6 +148,9 @@ export const createOrderService = ({
             ward = savedAddr.ward_user_address || savedAddr.ward;
             district = savedAddr.district_user_address || savedAddr.district;
             province = savedAddr.province_user_address || savedAddr.province;
+            provinceCode = savedAddr.province_code || provinceCode;
+            communeCode = savedAddr.commune_code || communeCode;
+            administrativeDatasetId = savedAddr.administrative_dataset_id || administrativeDatasetId;
             phoneOrder = phoneOrder || phoneAddress;
           }
         }
@@ -197,6 +203,9 @@ export const createOrderService = ({
             ward_order_address: ward,
             district_order_address: district,
             province_order_address: province,
+            province_code: provinceCode || null,
+            commune_code: communeCode || null,
+            administrative_dataset_id: administrativeDatasetId || null,
           },
           client,
         );
