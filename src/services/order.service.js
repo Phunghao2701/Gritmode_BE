@@ -58,9 +58,7 @@ export const createOrderService = ({
 
         // 3. Lock & Validate inventory for each item
         for (const item of cartItems) {
-          const inv = inventories.lockStockByVariantId
-            ? await inventories.lockStockByVariantId(item.product_variant_id, client)
-            : await inventories.findByVariantId(item.product_variant_id, client);
+          const inv = await inventories.lockStockByVariantId(item.product_variant_id, client);
 
           if (!inv) {
             throw notFound("INVENTORY_NOT_FOUND", `Không tìm thấy tồn kho cho sản phẩm ${item.name_product}`);
@@ -339,9 +337,7 @@ export const createOrderService = ({
 
       return transaction(async (client) => {
         // 1. Load items & release inventory reservations
-        const items = orders.findOrderItems
-          ? await orders.findOrderItems(orderId, client)
-          : order.items || [];
+        const items = await orders.findOrderItems(orderId, client);
 
         for (const item of items) {
           const qty = Number(item.quantity_order_item || item.quantity);
@@ -351,9 +347,7 @@ export const createOrderService = ({
         }
 
         // 2. Cancel pending payment if exists
-        if (payments.cancelPendingPaymentByOrderId) {
-          await payments.cancelPendingPaymentByOrderId(orderId, client);
-        }
+        await payments.cancelPendingPaymentByOrderId(orderId, client);
 
         // 3. Update order status to 'cancelled'
         const updated = await orders.updateOrderStatus(orderId, "cancelled", client);
@@ -394,9 +388,7 @@ export const createOrderService = ({
 
       return transaction(async (client) => {
         // 1. Release inventory reservations
-        const items = orders.findOrderItems
-          ? await orders.findOrderItems(order.order_id, client)
-          : order.items || [];
+        const items = await orders.findOrderItems(order.order_id, client);
 
         for (const item of items) {
           const qty = Number(item.quantity_order_item || item.quantity);
@@ -406,9 +398,7 @@ export const createOrderService = ({
         }
 
         // 2. Cancel pending payment
-        if (payments.cancelPendingPaymentByOrderId) {
-          await payments.cancelPendingPaymentByOrderId(order.order_id, client);
-        }
+        await payments.cancelPendingPaymentByOrderId(order.order_id, client);
 
         // 3. Update order status
         const updated = await orders.updateOrderStatus(order.order_id, "cancelled", client);

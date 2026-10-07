@@ -22,11 +22,8 @@ app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
     if (
-      allowedOrigins.length === 0 ||
-      allowedOrigins.includes(origin) ||
-      origin.includes('gritmode.vn') ||
-      origin.includes('localhost') ||
-      origin.includes('127.0.0.1')
+      allowedOrigins.length > 0 &&
+      allowedOrigins.includes(origin)
     ) {
       return callback(null, true);
     }
@@ -43,7 +40,10 @@ mountSwagger(app);
 
 
 // Định tuyến gốc: Tất cả API sẽ bắt đầu bằng /api/v1
-app.use('/api/v1', rootRouter);
+app.use('/api/v1', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  next();
+}, rootRouter);
 app.use(notFoundHandler);
 app.use(errorHandler);
 

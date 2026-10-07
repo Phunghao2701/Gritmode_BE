@@ -6,6 +6,7 @@ import { withTransaction } from "../config/database.js";
 import { slugify } from "../utils/validation.js";
 import { getProducts } from "./product.service.js";
 import { redisService } from "./redis.service.js";
+import logger from "../utils/logger.js";
 
 export const isCollectionVisible = (collection, now = new Date()) => {
   if (!collection) return false;
@@ -23,6 +24,19 @@ export const getCollectionDisplayStatus = (collection, now = new Date()) => {
   return "active";
 };
 
+const invalidateCollectionCaches = async () => {
+  try {
+    await Promise.all([
+      redisService.delByPattern("collections:*"),
+      redisService.delByPattern("products:*")
+    ]);
+  } catch (error) {
+    // The database transaction is already committed. Cache cleanup must not
+    // turn a successful admin mutation into a false 5xx response.
+    logger.warn("[collection-cache] invalidate failed", error.message);
+  }
+};
+
 export const createCollectionService = ({
   collections = collectionRepository,
   products = productRepository,
@@ -31,7 +45,7 @@ export const createCollectionService = ({
   productListing = getProducts,
 } = {}) => ({
   async getCollections() {
-    const { data } = await redisService.getOrSet("collections:list:visible", async () => {
+    const { data } = await redisService.getOrSet("collections:list:visible:v2", async () => {
       const list = await collections.listVisible();
       return list.map((item) => ({
         collection_id: item.collection_id,
@@ -43,6 +57,7 @@ export const createCollectionService = ({
         position_collection: item.position_collection,
         start_at: item.start_at,
         end_at: item.end_at,
+        created_at: item.created_at,
       }));
     }, 3600);
     return data;
@@ -117,7 +132,7 @@ export const createCollectionService = ({
       if (parent.parent_collection_id) throw badRequest("COLLECTION_DEPTH_EXCEEDED", "Bộ sưu tập chỉ hỗ trợ hai cấp cha và con");
     }
 
-    return transaction(async (client) => {
+    const created = await transaction(async (client) => {
       const created = await collections.create({
         ...data,
         slug_collection: slug,
@@ -133,10 +148,10 @@ export const createCollectionService = ({
         }, client);
       }
 
-      await redisService.delByPattern("collections:*");
-      await redisService.delByPattern("products:*");
       return created;
     });
+    await invalidateCollectionCaches();
+    return created;
   },
 
   async updateCollection(collectionId, data, userId) {
@@ -161,7 +176,7 @@ export const createCollectionService = ({
       throw badRequest("INVALID_DATE_RANGE", "start_at phải nhỏ hơn hoặc bằng end_at");
     }
 
-    return transaction(async (client) => {
+    const updated = await transaction(async (client) => {
       const payload = {
         ...data,
         ...(slug ? { slug_collection: slug } : {}),
@@ -179,17 +194,17 @@ export const createCollectionService = ({
         }, client);
       }
 
-      await redisService.delByPattern("collections:*");
-      await redisService.delByPattern("products:*");
       return updated;
     });
+    await invalidateCollectionCaches();
+    return updated;
   },
 
   async deleteCollection(collectionId, userId) {
     const existing = await collections.findById(collectionId);
     if (!existing) throw notFound("COLLECTION_NOT_FOUND", "Không tìm thấy bộ sưu tập");
 
-    return transaction(async (client) => {
+    await transaction(async (client) => {
       // 1. Detach child collections
       await client.query(`UPDATE collection SET parent_collection_id = NULL WHERE parent_collection_id = $1`, [collectionId]);
       // 2. Remove product relations
@@ -207,16 +222,15 @@ export const createCollectionService = ({
         }, client);
       }
 
-      await redisService.delByPattern("collections:*");
-      await redisService.delByPattern("products:*");
     });
+    await invalidateCollectionCaches();
   },
 
   async updateCollectionStatus(collectionId, isActive, userId) {
     const existing = await collections.findById(collectionId);
     if (!existing) throw notFound("COLLECTION_NOT_FOUND", "Không tìm thấy bộ sưu tập");
 
-    return transaction(async (client) => {
+    const updated = await transaction(async (client) => {
       const updated = await collections.updateStatus(collectionId, isActive, client);
       if (audits?.record) {
         await audits.record({
@@ -230,6 +244,8 @@ export const createCollectionService = ({
       }
       return updated;
     });
+    await invalidateCollectionCaches();
+    return updated;
   },
 
   async addProductToCollection(collectionId, payload, userId) {
@@ -242,7 +258,7 @@ export const createCollectionService = ({
         if (!prod) throw notFound("PRODUCT_NOT_FOUND", `Không tìm thấy sản phẩm ${item.product_id}`);
       }
 
-      return transaction(async (client) => {
+      const result = await transaction(async (client) => {
         let currentMax = await collections.getMaxPosition(collectionId, client);
         for (const item of payload.products) {
           const pos = item.position_product_collection !== undefined && item.position_product_collection !== 0
@@ -263,6 +279,8 @@ export const createCollectionService = ({
 
         return collections.findCollectionProducts(collectionId, client);
       });
+      await invalidateCollectionCaches();
+      return result;
     }
 
     // Single addition
@@ -274,7 +292,7 @@ export const createCollectionService = ({
       throw conflict("PRODUCT_COLLECTION_EXISTS", "Sản phẩm đã thuộc bộ sưu tập này");
     }
 
-    return transaction(async (client) => {
+    const result = await transaction(async (client) => {
       let pos = payload.position_product_collection;
       if (pos === undefined || pos === 0) {
         const maxPos = await collections.getMaxPosition(collectionId, client);
@@ -295,6 +313,8 @@ export const createCollectionService = ({
 
       return collections.findCollectionProducts(collectionId, client);
     });
+    await invalidateCollectionCaches();
+    return result;
   },
 
   async removeProductFromCollection(collectionId, productId, userId) {
@@ -309,7 +329,7 @@ export const createCollectionService = ({
       throw notFound("PRODUCT_COLLECTION_NOT_FOUND", "Sản phẩm không thuộc bộ sưu tập này");
     }
 
-    return transaction(async (client) => {
+    const result = await transaction(async (client) => {
       await collections.removeProduct(collectionId, productId, client);
       if (audits?.record) {
         await audits.record({
@@ -320,6 +340,8 @@ export const createCollectionService = ({
         }, client);
       }
     });
+    await invalidateCollectionCaches();
+    return result;
   },
 
   async reorderCollectionProducts(collectionId, payload, userId) {
@@ -333,7 +355,7 @@ export const createCollectionService = ({
       }
     }
 
-    return transaction(async (client) => {
+    const result = await transaction(async (client) => {
       await collections.updateProductPositions(collectionId, payload.products, client);
       if (audits?.record) {
         await audits.record({
@@ -346,6 +368,8 @@ export const createCollectionService = ({
       }
       return collections.findCollectionProducts(collectionId, client);
     });
+    await invalidateCollectionCaches();
+    return result;
   },
 });
 

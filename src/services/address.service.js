@@ -22,13 +22,11 @@ export const createAddressService = ({
 
   async create(userId, input) {
     return transaction(async (client) => {
-      const count = addresses.countByUser
-        ? await addresses.countByUser(userId, client)
-        : (await addresses.list(userId, client)).length;
+      const count = await addresses.countByUser(userId, client);
 
       const shouldBeDefault = count === 0 || Boolean(input.is_default);
 
-      if (shouldBeDefault && addresses.unsetDefault) {
+      if (shouldBeDefault) {
         await addresses.unsetDefault(userId, client);
       }
 
@@ -38,7 +36,7 @@ export const createAddressService = ({
       };
 
       const created = await addresses.create(userId, addressToCreate, client);
-      return shouldBeDefault && addresses.setDefault && !created.is_default
+      return shouldBeDefault && !created.is_default
         ? addresses.setDefault(created.user_address_id, userId, client)
         : created;
     });
@@ -49,9 +47,7 @@ export const createAddressService = ({
 
   async update(userId, addressId, input) {
     return transaction(async (client) => {
-      const existing = await (addresses.findById
-        ? addresses.findById(addressId, userId, client)
-        : true);
+      const existing = await addresses.findById(addressId, userId, client);
       if (!existing) throw notFound("ADDRESS_NOT_FOUND", "Không tìm thấy địa chỉ");
 
       const address = await addresses.update(addressId, userId, input, client);
@@ -65,17 +61,15 @@ export const createAddressService = ({
 
   async remove(userId, addressId) {
     return transaction(async (client) => {
-      const existing = addresses.findById
-        ? await addresses.findById(addressId, userId, client)
-        : { is_default: false };
-      if (!existing && addresses.findById) throw notFound("ADDRESS_NOT_FOUND", "Không tìm thấy địa chỉ");
+      const existing = await addresses.findById(addressId, userId, client);
+      if (!existing) throw notFound("ADDRESS_NOT_FOUND", "Không tìm thấy địa chỉ");
 
       const removed = await addresses.remove(addressId, userId, client);
       if (!removed) throw notFound("ADDRESS_NOT_FOUND", "Không tìm thấy địa chỉ");
 
-      if (existing?.is_default && addresses.findNewest) {
+      if (existing.is_default) {
         const newest = await addresses.findNewest(userId, client);
-        if (newest && addresses.setDefault) {
+        if (newest) {
           await addresses.setDefault(newest.user_address_id, userId, client);
         }
       }

@@ -1,5 +1,6 @@
 import { createHmac, randomInt } from "node:crypto";
 import axios from "axios";
+import { AppError } from "../errors/app-error.js";
 
 /**
  * Generate numeric unique orderCode for payOS
@@ -31,7 +32,11 @@ export const sortDataByKey = (data = {}) => {
  */
 export const createPayOSSignature = (data = {}, checksumKey = "") => {
   const queryString = sortDataByKey(data);
-  return createHmac("sha256", checksumKey || process.env.PAYOS_CHECKSUM_KEY || "")
+  const key = String(checksumKey || process.env.PAYOS_CHECKSUM_KEY || "").trim();
+  if (!key) {
+    throw new AppError(503, "PAYOS_CONFIG_MISSING", "Thiếu PAYOS_CHECKSUM_KEY");
+  }
+  return createHmac("sha256", key)
     .update(queryString)
     .digest("hex");
 };
@@ -71,17 +76,20 @@ export const callPayOSCreatePaymentLink = async ({
     apiKey.includes("<") ||
     checksumKey.includes("<")
   ) {
-    console.warn("payOS keys are not configured yet in .env");
-    return null;
+    throw new AppError(503, "PAYOS_CONFIG_MISSING", "Thiếu cấu hình PayOS bắt buộc");
+  }
+
+  if (!process.env.PAYOS_CANCEL_URL || !process.env.PAYOS_RETURN_URL) {
+    throw new AppError(503, "PAYOS_CONFIG_MISSING", "Thiếu PAYOS_CANCEL_URL hoặc PAYOS_RETURN_URL");
   }
 
   const cleanDescription = (description || `ORDER${orderCode}`).slice(0, 25);
   const dataToSign = {
     amount: Number(amount),
-    cancelUrl: cancelUrl || process.env.PAYOS_CANCEL_URL || "http://localhost:5173/checkout",
+    cancelUrl: cancelUrl || process.env.PAYOS_CANCEL_URL,
     description: cleanDescription,
     orderCode: Number(orderCode),
-    returnUrl: returnUrl || process.env.PAYOS_RETURN_URL || "http://localhost:5173/payment/result",
+    returnUrl: returnUrl || process.env.PAYOS_RETURN_URL,
   };
 
   const signature = createPayOSSignature(dataToSign, checksumKey);
@@ -108,11 +116,10 @@ export const callPayOSCreatePaymentLink = async ({
     if (response.data?.code === "00" && response.data?.data) {
       return response.data.data;
     }
-    console.warn("payOS API responded with code:", response.data?.code, response.data?.desc);
-    return null;
+    throw new AppError(502, "PAYOS_PROVIDER_FAILED", "PayOS từ chối tạo payment link");
   } catch (err) {
-    console.error("payOS API request error:", err.response?.data || err.message);
-    return null;
+    if (err instanceof AppError) throw err;
+    throw new AppError(502, "PAYOS_PROVIDER_FAILED", "Không thể kết nối PayOS");
   }
 };
 
@@ -129,7 +136,7 @@ export const getPayOSPaymentLinkInfo = async (orderCodeOrLinkId) => {
     clientId.includes("<") ||
     apiKey.includes("<")
   ) {
-    return null;
+    throw new AppError(503, "PAYOS_CONFIG_MISSING", "Thiếu cấu hình PayOS bắt buộc");
   }
 
   try {
@@ -146,8 +153,9 @@ export const getPayOSPaymentLinkInfo = async (orderCodeOrLinkId) => {
     if (response.data?.code === "00" && response.data?.data) {
       return response.data.data;
     }
-    return null;
+    throw new AppError(502, "PAYOS_PROVIDER_FAILED", "PayOS không trả về trạng thái hợp lệ");
   } catch (err) {
-    return null;
+    if (err instanceof AppError) throw err;
+    throw new AppError(502, "PAYOS_PROVIDER_FAILED", "Không thể truy vấn trạng thái PayOS");
   }
 };

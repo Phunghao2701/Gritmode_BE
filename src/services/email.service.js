@@ -1,4 +1,5 @@
 import dns from "node:dns";
+import { createHash } from "node:crypto";
 import axios from "axios";
 import { OAuth2Client } from "google-auth-library";
 import nodemailer from "nodemailer";
@@ -10,6 +11,8 @@ import { orderConfirmationText, renderOrderConfirmationEmail } from "../template
 if (dns.setDefaultResultOrder) {
   dns.setDefaultResultOrder("ipv4first");
 }
+
+const hashForIdempotency = (value) => createHash("sha256").update(String(value)).digest("hex");
 
 const otpTemplate = (otp) => `
 <!doctype html>
@@ -34,8 +37,11 @@ export const createEmailService = ({
   let cachedTransport = null;
 
   // --- Gửi qua Resend API (HTTPS Port 443 - Miễn nhiễm chặn port trên Render) ---
-  const sendViaResend = async ({ to, subject, html, text }) => {
-    const fromAddress = env.RESEND_FROM || "Gritmode <onboarding@resend.dev>";
+  const sendViaResend = async ({ to, subject, html, text, idempotencyKey }) => {
+    const fromAddress = env.RESEND_FROM || env.EMAIL_USER;
+    if (!fromAddress?.trim()) {
+      throw new AppError(500, "EMAIL_CONFIG_MISSING", "Thiếu RESEND_FROM hoặc EMAIL_USER");
+    }
     const res = await axios.post(
       "https://api.resend.com/emails",
       {
@@ -49,6 +55,7 @@ export const createEmailService = ({
         headers: {
           Authorization: `Bearer ${env.RESEND_API_KEY.trim()}`,
           "Content-Type": "application/json",
+          ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
         },
         timeout: 10000,
       }
@@ -163,50 +170,55 @@ export const createEmailService = ({
     return cachedTransport;
   };
 
-  // Bộ điều hướng gửi email (Dispatch multi-strategy)
-  const dispatchSend = async ({ to, subject, html, text }) => {
-    // 1. Nếu có RESEND_API_KEY -> ưu tiên gửi qua Resend HTTPS API (Nhanh và ổn định nhất trên Render)
-    if (env.RESEND_API_KEY?.trim()) {
-      try {
-        return await sendViaResend({ to, subject, html, text });
-      } catch (err) {
-        logger.warn("[email] Resend API failed, trying next strategy:", err.message);
-      }
+  // Chọn đúng một provider từ cấu hình; lỗi provider phải nổi lên để outbox retry.
+  const dispatchSend = async ({ to, subject, html, text, idempotencyKey }) => {
+    const provider = String(env.EMAIL_PROVIDER || "").trim().toLowerCase();
+    if (!provider) {
+      throw new AppError(500, "EMAIL_CONFIG_MISSING", "Thiếu cấu hình EMAIL_PROVIDER");
     }
 
-    // 2. Nếu có BREVO_API_KEY -> gửi qua Brevo HTTPS API
-    if (env.BREVO_API_KEY?.trim()) {
-      try {
-        return await sendViaBrevo({ to, subject, html, text });
-      } catch (err) {
-        logger.warn("[email] Brevo API failed, trying next strategy:", err.message);
+    switch (provider) {
+      case "resend":
+        if (!env.RESEND_API_KEY?.trim()) {
+          throw new AppError(500, "EMAIL_CONFIG_MISSING", "Thiếu cấu hình RESEND_API_KEY");
+        }
+        return sendViaResend({ to, subject, html, text, idempotencyKey });
+      case "brevo":
+        if (!env.BREVO_API_KEY?.trim()) {
+          throw new AppError(500, "EMAIL_CONFIG_MISSING", "Thiếu cấu hình BREVO_API_KEY");
+        }
+        return sendViaBrevo({ to, subject, html, text, idempotencyKey });
+      case "gmail":
+        if (!env.CLIENT_ID?.trim() || !env.CLIENT_SECRET?.trim() || !env.REFRESH_TOKEN?.trim()) {
+          throw new AppError(500, "EMAIL_CONFIG_MISSING", "Thiếu cấu hình Gmail OAuth2");
+        }
+        return sendViaGmailApi({ to, subject, html, text, idempotencyKey });
+      case "smtp": {
+        const transport = getTransport();
+        const result = await transport.sendMail({
+          from: `"Gritmode" <${env.EMAIL_USER}>`,
+          to,
+          subject,
+          text,
+          html,
+          headers: idempotencyKey ? { "X-Notification-Idempotency-Key": idempotencyKey } : undefined,
+        });
+        return { success: true, message_id: result.messageId };
       }
+      default:
+        throw new AppError(500, "EMAIL_PROVIDER_UNSUPPORTED", `Email provider không được hỗ trợ: ${provider}`);
     }
-
-    // 3. Nếu có OAuth2 (CLIENT_ID + REFRESH_TOKEN) -> thử Gmail REST API (Port 443)
-    if (env.CLIENT_ID?.trim() && env.CLIENT_SECRET?.trim() && env.REFRESH_TOKEN?.trim()) {
-      try {
-        return await sendViaGmailApi({ to, subject, html, text });
-      } catch (err) {
-        logger.warn("[email] Gmail REST API failed, fallbacking to SMTP:", err.message);
-      }
-    }
-
-    // 4. Fallback sang Nodemailer SMTP
-    const transport = getTransport();
-    const result = await transport.sendMail({
-      from: `"Gritmode" <${env.EMAIL_USER}>`,
-      to,
-      subject,
-      text,
-      html,
-    });
-    return { success: true, message_id: result.messageId };
   };
 
   return {
     async verifyConnection() {
-      if (env.RESEND_API_KEY?.trim() || env.BREVO_API_KEY?.trim()) return true;
+      const provider = String(env.EMAIL_PROVIDER || "").trim().toLowerCase();
+      if (["resend", "brevo", "gmail"].includes(provider)) {
+        return true;
+      }
+      if (provider !== "smtp") {
+        throw new AppError(500, "EMAIL_PROVIDER_UNSUPPORTED", `Email provider không được hỗ trợ: ${provider || "missing"}`);
+      }
       try {
         await getTransport().verify();
         return true;
@@ -216,13 +228,14 @@ export const createEmailService = ({
       }
     },
 
-    async sendOtpEmail({ email, otp }) {
+    async sendOtpEmail({ email, otp }, { idempotencyKey = `otp:${email}:${hashForIdempotency(otp)}` } = {}) {
       try {
         const result = await dispatchSend({
           to: email,
           subject: `${otp} là mã xác thực Gritmode`,
           text: `Mã OTP Gritmode của bạn là ${otp}. Mã có hiệu lực trong 5 phút.`,
           html: otpTemplate(otp),
+          idempotencyKey,
         });
         logger.info(`[email] OTP sent to ${email}`);
         return result;
@@ -233,7 +246,7 @@ export const createEmailService = ({
       }
     },
 
-    async sendOrderConfirmationEmail(order) {
+    async sendOrderConfirmationEmail(order, { idempotencyKey = `order-email:${order.order_code}` } = {}) {
       try {
         const result = await dispatchSend({
           to: order.email_order,
@@ -244,6 +257,7 @@ export const createEmailService = ({
             supportEmail: env.SUPPORT_EMAIL || env.EMAIL_USER,
             hotline: env.SUPPORT_HOTLINE,
           }),
+          idempotencyKey,
         });
         logger.info(`[email] Order confirmation sent for ${order.order_code}`);
         return result;

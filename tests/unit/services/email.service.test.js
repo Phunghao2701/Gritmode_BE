@@ -7,6 +7,7 @@ describe("email service", () => {
     let message;
     const service = createEmailService({
       env: {
+        EMAIL_PROVIDER: "smtp",
         EMAIL_USER: "sender@example.com",
         CLIENT_ID: "client-id",
         CLIENT_SECRET: "client-secret",
@@ -39,6 +40,7 @@ describe("email service", () => {
   test("maps provider failures to EMAIL_DELIVERY_FAILED", async () => {
     const service = createEmailService({
       env: {
+        EMAIL_PROVIDER: "smtp",
         EMAIL_USER: "sender@example.com",
         CLIENT_ID: "client-id",
         CLIENT_SECRET: "client-secret",
@@ -56,6 +58,7 @@ describe("email service", () => {
     let message;
     const service = createEmailService({
       env: {
+        EMAIL_PROVIDER: "smtp",
         EMAIL_USER: "sender@example.com",
         CLIENT_ID: "client-id",
         CLIENT_SECRET: "client-secret",
@@ -103,7 +106,7 @@ describe("email service", () => {
   test("shows paid wording only for a paid PayOS order", async () => {
     let html;
     const service = createEmailService({
-      env: { EMAIL_USER: "sender@example.com", CLIENT_ID: "id", CLIENT_SECRET: "secret", REFRESH_TOKEN: "refresh", FRONTEND_URL: "https://gritmode.vn" },
+      env: { EMAIL_PROVIDER: "smtp", EMAIL_USER: "sender@example.com", CLIENT_ID: "id", CLIENT_SECRET: "secret", REFRESH_TOKEN: "refresh", FRONTEND_URL: "https://gritmode.vn" },
       transportFactory: () => ({ sendMail: async (message) => { html = message.html; return {}; } }),
     });
     await service.sendOrderConfirmationEmail({

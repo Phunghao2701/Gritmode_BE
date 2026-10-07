@@ -1,4 +1,5 @@
 import { redis } from '../config/redis.js';
+import { AppError } from '../errors/app-error.js';
 
 export class RedisService {
   constructor(client = redis) {
@@ -9,20 +10,25 @@ export class RedisService {
     return Boolean(this.client && this.client.status === 'ready');
   }
 
+  assertAvailable(operation) {
+    if (!this.isAvailable()) {
+      throw new AppError(503, 'REDIS_UNAVAILABLE', `Redis không khả dụng cho thao tác ${operation}`);
+    }
+  }
+
   async get(key) {
-    if (!this.isAvailable()) return null;
+    this.assertAvailable('GET');
     try {
       const data = await this.client.get(key);
       if (!data) return null;
       return JSON.parse(data);
     } catch (err) {
-      console.warn(`[RedisService] GET ${key} error:`, err.message);
-      return null;
+      throw new AppError(503, 'REDIS_UNAVAILABLE', `Redis GET thất bại: ${err.message}`);
     }
   }
 
   async set(key, value, ttlSeconds = 3600) {
-    if (!this.isAvailable()) return false;
+    this.assertAvailable('SET');
     try {
       const serialized = JSON.stringify(value);
       if (ttlSeconds) {
@@ -32,24 +38,22 @@ export class RedisService {
       }
       return true;
     } catch (err) {
-      console.warn(`[RedisService] SET ${key} error:`, err.message);
-      return false;
+      throw new AppError(503, 'REDIS_UNAVAILABLE', `Redis SET thất bại: ${err.message}`);
     }
   }
 
   async del(key) {
-    if (!this.isAvailable()) return false;
+    this.assertAvailable('DEL');
     try {
       await this.client.del(key);
       return true;
     } catch (err) {
-      console.warn(`[RedisService] DEL ${key} error:`, err.message);
-      return false;
+      throw new AppError(503, 'REDIS_UNAVAILABLE', `Redis DEL thất bại: ${err.message}`);
     }
   }
 
   async delByPattern(pattern) {
-    if (!this.isAvailable()) return false;
+    this.assertAvailable('SCAN');
     try {
       let cursor = '0';
       do {
@@ -61,24 +65,35 @@ export class RedisService {
       } while (cursor !== '0');
       return true;
     } catch (err) {
-      console.warn(`[RedisService] delByPattern ${pattern} error:`, err.message);
-      return false;
+      throw new AppError(503, 'REDIS_UNAVAILABLE', `Redis SCAN thất bại: ${err.message}`);
     }
   }
 
   /**
    * Safe Cache-Aside wrapper:
    * Returns cached value if present; otherwise calls fetchFn(), writes to cache and returns.
+   * Redis is an optimization layer, so an unavailable Redis must fall back to
+   * the source of truth instead of turning a healthy database request into 503.
    */
   async getOrSet(key, fetchFn, ttlSeconds = 1800) {
-    const cached = await this.get(key);
-    if (cached !== null) {
-      return { data: cached, isCached: true };
+    if (this.isAvailable()) {
+      try {
+        const cached = await this.get(key);
+        if (cached !== null) {
+          return { data: cached, isCached: true };
+        }
+      } catch {
+        // Fall through to the source of truth when Redis is unavailable.
+      }
     }
 
     const freshData = await fetchFn();
-    if (freshData !== undefined && freshData !== null) {
-      await this.set(key, freshData, ttlSeconds);
+    if (freshData !== undefined && freshData !== null && this.isAvailable()) {
+      try {
+        await this.set(key, freshData, ttlSeconds);
+      } catch {
+        // The fresh database response is still valid if cache write fails.
+      }
     }
     return { data: freshData, isCached: false };
   }

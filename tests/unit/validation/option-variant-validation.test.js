@@ -41,6 +41,11 @@ describe("option and variant validation primitives", () => {
     const createValid = validateCreateOptionValue({ value_option: "  Black  " });
     assert.equal(createValid.ok, true);
     assert.equal(createValid.value.value_option, "Black");
+    assert.equal(createValid.value.is_hidden, false);
+
+    const hiddenValue = validateUpdateOptionValue({ value_option: "S", is_hidden: true });
+    assert.equal(hiddenValue.ok, true);
+    assert.equal(hiddenValue.value.is_hidden, true);
 
     const updateInvalid = validateUpdateOptionValue({});
     assert.equal(updateInvalid.ok, false);
