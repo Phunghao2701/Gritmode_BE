@@ -107,11 +107,14 @@ export const orderRepository = {
         ward_order_address,
         district_order_address,
         province_order_address,
+        province_code,
+        commune_code,
+        administrative_dataset_id,
         created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
       RETURNING order_address_id, order_id, receiver_name_order_address, phone_order_address,
                 address_line_order_address, ward_order_address, district_order_address,
-                province_order_address, created_at
+                province_order_address, province_code, commune_code, administrative_dataset_id, created_at
     `;
     const values = [
       addr.order_id,
@@ -121,6 +124,9 @@ export const orderRepository = {
       addr.ward_order_address || null,
       addr.district_order_address || null,
       addr.province_order_address || null,
+      addr.province_code || null,
+      addr.commune_code || null,
+      addr.administrative_dataset_id || null,
     ];
     const { rows } = await runner(client).query(query, values);
     return rows[0];
@@ -230,6 +236,9 @@ export const orderRepository = {
         ward_order_address,
         district_order_address,
         province_order_address,
+        province_code,
+        commune_code,
+        administrative_dataset_id,
         created_at
       FROM order_address
       WHERE order_id = $1

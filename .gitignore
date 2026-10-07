@@ -111,7 +111,8 @@ _ops/
 # OS metadata
 
 # Local agent/workflow material (kept on developer machines only)
-/scripts/
+/scripts/*
+!/scripts/sync-administrative-data.js
 /tasks/
 /docs/
 /deploy/
