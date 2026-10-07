@@ -270,6 +270,9 @@ export const validateCreateAddress = (input = {}) => {
             ward_user_address: input.ward_user_address ? input.ward_user_address.trim() : null,
             district_user_address: input.district_user_address ? input.district_user_address.trim() : null,
             province_user_address: input.province_user_address ? input.province_user_address.trim() : null,
+            province_code: input.province_code ? input.province_code.trim() : null,
+            commune_code: input.commune_code ? input.commune_code.trim() : null,
+            administrative_dataset_id: input.administrative_dataset_id || null,
             is_default: Boolean(input.is_default),
         },
     };
@@ -331,6 +334,31 @@ export const validateUpdateAddress = (input = {}) => {
             errors.push({ field: 'province_user_address', message: 'Tỉnh/Thành phố không hợp lệ' });
         } else {
             value.province_user_address = input.province_user_address ? input.province_user_address.trim() : null;
+        }
+    }
+
+    if (input.province_code !== undefined) {
+        if (input.province_code !== null && !requiredString(input.province_code, 1, 20)) {
+            errors.push({ field: 'province_code', message: 'Mã tỉnh/thành không hợp lệ' });
+        } else {
+            value.province_code = input.province_code ? input.province_code.trim() : null;
+        }
+    }
+
+    if (input.commune_code !== undefined) {
+        if (input.commune_code !== null && !requiredString(input.commune_code, 1, 20)) {
+            errors.push({ field: 'commune_code', message: 'Mã phường/xã không hợp lệ' });
+        } else {
+            value.commune_code = input.commune_code ? input.commune_code.trim() : null;
+        }
+    }
+
+    if (input.administrative_dataset_id !== undefined) {
+        const datasetId = Number(input.administrative_dataset_id);
+        if (input.administrative_dataset_id !== null && (!Number.isInteger(datasetId) || datasetId <= 0)) {
+            errors.push({ field: 'administrative_dataset_id', message: 'Mã phiên dữ liệu địa chỉ không hợp lệ' });
+        } else {
+            value.administrative_dataset_id = input.administrative_dataset_id === null ? null : datasetId;
         }
     }
 
@@ -2326,6 +2354,18 @@ export const validateCheckout = (input = {}, { isAuthenticated = false } = {}) =
             value.ward_order_address = typeof input.ward_order_address === 'string' ? input.ward_order_address.trim() : null;
             value.district_order_address = typeof input.district_order_address === 'string' ? input.district_order_address.trim() : null;
             value.province_order_address = typeof input.province_order_address === 'string' ? input.province_order_address.trim() : null;
+            value.province_code = typeof input.province_code === 'string' ? input.province_code.trim() : null;
+            value.commune_code = typeof input.commune_code === 'string' ? input.commune_code.trim() : null;
+            if (input.administrative_dataset_id !== undefined && input.administrative_dataset_id !== null) {
+                const datasetId = Number(input.administrative_dataset_id);
+                if (!Number.isInteger(datasetId) || datasetId <= 0) {
+                    errors.push({ field: 'administrative_dataset_id', message: 'Mã phiên dữ liệu địa chỉ không hợp lệ' });
+                } else {
+                    value.administrative_dataset_id = datasetId;
+                }
+            } else {
+                value.administrative_dataset_id = null;
+            }
         }
     }
 
