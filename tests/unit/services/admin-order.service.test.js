@@ -65,6 +65,7 @@ describe("admin order service", () => {
   // ── Status Transitions ───────────────────────────────────────────────────
   test("confirmOrder transitions pending to confirmed", async () => {
     let loggedAction = null;
+    const events = [];
     const service = createAdminOrderService({
       orders: {
         lockOrderById: async () => sampleDetail,
@@ -74,6 +75,9 @@ describe("admin order service", () => {
       audits: {
         log: async ({ action }) => { loggedAction = action; },
       },
+      realtime: {
+        publish: (event) => events.push(event),
+      },
       transaction,
     });
 
@@ -81,6 +85,15 @@ describe("admin order service", () => {
     assert.ok(result);
     assert.equal(result.status_order, "confirmed");
     assert.equal(loggedAction, "ORDER_CONFIRMED");
+    assert.deepEqual(events, [{
+      type: "admin.order.updated",
+      data: {
+        order_id: 100,
+        order_code: "ORD-001",
+        previous_status_order: "pending",
+        status_order: "confirmed",
+      },
+    }]);
   });
 
   test("confirmOrder rejects payOS order if payment is pending", async () => {

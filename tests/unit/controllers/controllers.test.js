@@ -13,9 +13,9 @@ import { createVoucherController } from "../../../src/controllers/voucher.contro
 import { createOrderController } from "../../../src/controllers/order.controller.js";
 import { createAdminOrderController } from "../../../src/controllers/admin-order.controller.js";
 import { createAdminUserController } from "../../../src/controllers/admin-user.controller.js";
-import { createAdminAuditLogController } from "../../../src/controllers/admin-audit-log.controller.js";
 import { createUserSessionController } from "../../../src/controllers/user-session.controller.js";
 import { createPaymentController } from "../../../src/controllers/payment.controller.js";
+import { redisService } from "../../../src/services/redis.service.js";
 
 
 
@@ -27,6 +27,7 @@ const response = () => {
   const res = { cookies: [], statusCode: 200 };
   res.status = (value) => { res.statusCode = value; return res; };
   res.json = (value) => { res.body = value; return res; };
+  res.setHeader = (name, value) => { res.headers = { ...(res.headers || {}), [name]: value }; };
   res.cookie = (...args) => { res.cookies.push(args); return res; };
   res.clearCookie = (...args) => { res.cleared = args; return res; };
   return res;
@@ -156,7 +157,8 @@ describe("controllers", () => {
     }
   });
 
-  test("product controller adapts getProducts, getProductById and admin CRUD", async () => {
+  test("product controller adapts getProducts, getProductById and admin CRUD", async (t) => {
+    t.mock.method(redisService, "delByPattern", async () => true);
     const service = {
       getProducts: async () => ({ items: [], pagination: {} }),
       getProductById: async () => ({ product_id: 1 }),
@@ -435,7 +437,8 @@ describe("controllers", () => {
     }
   });
 
-  test("inventory controller delegates to service and sends correct HTTP response", async () => {
+  test("inventory controller delegates to service and sends correct HTTP response", async (t) => {
+    t.mock.method(redisService, "delByPattern", async () => true);
     const items = [{ inventory_id: 1, product_variant_id: 101, sku: "SKU-A", quantity_stock: 10, quantity_reserved: 2, quantity_available: 8, is_low_stock: false, is_out_of_stock: false }];
     const pagination = { page: 1, limit: 20, total: 1, total_pages: 1 };
     const inventoryService = {
@@ -704,31 +707,6 @@ describe("controllers", () => {
       ["blockUser", req({ user: { user_id: "admin-1" }, validatedParams: { userId: "user-1" } })],
       ["unblockUser", req({ user: { user_id: "admin-1" }, validatedParams: { userId: "user-1" } })],
       ["setUserInactive", req({ user: { user_id: "admin-1" }, validatedParams: { userId: "user-1" } })],
-    ];
-    for (const [name, request] of cases) {
-      let passedErr = null;
-      await explodingController[name](request, response(), (e) => { passedErr = e; });
-      assert.ok(passedErr);
-    }
-  });
-
-  test("admin audit log controller delegates to service and handles errors", async () => {
-    const service = {
-      getAuditLogs: async () => ({ items: [], pagination: {} }),
-      getAuditLogById: async () => ({ audit_log_id: 1 }),
-    };
-    const controller = createAdminAuditLogController({ auditLogs: service });
-    await controller.getAuditLogs(req({ validatedQuery: {} }), response(), assert.fail);
-    await controller.getAuditLogById(req({ validatedParams: { auditLogId: 1 } }), response(), assert.fail);
-
-    const explodingService = {
-      getAuditLogs: async () => { throw new Error("audit_err"); },
-      getAuditLogById: async () => { throw new Error("audit_err"); },
-    };
-    const explodingController = createAdminAuditLogController({ auditLogs: explodingService });
-    const cases = [
-      ["getAuditLogs", req()],
-      ["getAuditLogById", req({ validatedParams: { auditLogId: 1 } })],
     ];
     for (const [name, request] of cases) {
       let passedErr = null;

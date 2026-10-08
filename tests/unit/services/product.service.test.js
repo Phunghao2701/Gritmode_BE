@@ -271,38 +271,6 @@ describe("product service", () => {
     assert.equal(await service.productExists(999), false);
   });
 
-  test("publishProductLegacy and archiveProductLegacy update status with audit", async () => {
-    let updatedStatus = null;
-    let auditAction = null;
-
-    const service = createProductService({
-      products: {
-        findById: async (id) => (id === 1 ? sampleProduct : null),
-        updateStatus: async (id, status) => {
-          updatedStatus = status;
-          return { ...sampleProduct, status_product: status };
-        },
-      },
-      audit: {
-        log: async (entry) => {
-          auditAction = entry.action;
-        },
-      },
-      transaction,
-    });
-
-    const pub = await service.publishProductLegacy(1, "admin-1");
-    assert.equal(pub.status_product, "active");
-    assert.equal(auditAction, "publish_product");
-
-    const arch = await service.archiveProductLegacy(1, "admin-1");
-    assert.equal(arch.status_product, "archived");
-    assert.equal(auditAction, "archive_product");
-
-    await assert.rejects(service.publishProductLegacy(999, "admin-1"), (e) => e.code === "PRODUCT_NOT_FOUND");
-    await assert.rejects(service.archiveProductLegacy(999, "admin-1"), (e) => e.code === "PRODUCT_NOT_FOUND");
-  });
-
   test("updateFullProduct validates categories, collections, and variant ownership", async () => {
     const service = createProductService({
       products: {
