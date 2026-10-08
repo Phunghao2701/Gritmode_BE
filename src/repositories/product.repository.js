@@ -143,6 +143,12 @@ export const productRepository = {
           JOIN inventory i ON i.product_variant_id = pv.product_variant_id
           WHERE pv.product_id = p.product_id
         ), false) AS is_available
+        ,COALESCE((
+          SELECT SUM(i.quantity_stock - i.quantity_reserved)::int
+          FROM product_variant pv
+          JOIN inventory i ON i.product_variant_id = pv.product_variant_id
+          WHERE pv.product_id = p.product_id
+        ), 0) AS quantity_available
         ,(SELECT COUNT(*)::int FROM product_variant pv WHERE pv.product_id = p.product_id) AS variant_count
       FROM product p
       ${where}
@@ -162,6 +168,7 @@ export const productRepository = {
       original_min_price: row.original_min_price !== null ? Number(row.original_min_price) : null,
       original_max_price: row.original_max_price !== null ? Number(row.original_max_price) : null,
       is_available: Boolean(row.is_available),
+      quantity_available: Number(row.quantity_available || 0),
       variant_count: Number(row.variant_count || 0),
       created_at: row.created_at,
       updated_at: row.updated_at,
