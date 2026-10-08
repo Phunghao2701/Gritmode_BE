@@ -76,6 +76,37 @@ describe("payment repository", () => {
       const resExpired = await paymentRepository.markPaymentExpired(1, mockClient);
       assert.equal(resExpired.status_payment, "expired");
     });
+
+    test("guards PayOS transitions by the current payment state", async () => {
+      const queries = [];
+      mockClient.query = mock.fn(async (query) => {
+        queries.push(query);
+        return { rows: [], rowCount: 0 };
+      });
+
+      assert.equal(await paymentRepository.markPayOSAsPaid({ paymentId: 1, reference: "REF" }, mockClient), null);
+      assert.equal(await paymentRepository.markPaymentExpired(1, mockClient), null);
+      assert.match(queries[0], /status_payment IN \('pending', 'cancelled'\)/);
+      assert.match(queries[1], /status_payment = 'pending'/);
+    });
+
+    test("cancels only the locked PayOS payment attempt", async () => {
+      let queryText = "";
+      let queryValues = [];
+      mockClient.query = mock.fn(async (query, values) => {
+        queryText = query;
+        queryValues = values;
+        return { rows: [{ payment_id: 7, status_payment: "cancelled" }], rowCount: 1 };
+      });
+
+      const result = await paymentRepository.cancelPendingPayOSPaymentById(7, mockClient);
+
+      assert.equal(result.payment_id, 7);
+      assert.deepEqual(queryValues, [7]);
+      assert.match(queryText, /payment_id = \$1/);
+      assert.match(queryText, /payment_method = 'payos'/);
+      assert.match(queryText, /status_payment = 'pending'/);
+    });
   });
 });
 

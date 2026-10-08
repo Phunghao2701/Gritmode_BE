@@ -6,6 +6,7 @@ import nodemailer from "nodemailer";
 import { AppError } from "../errors/app-error.js";
 import logger from "../utils/logger.js";
 import { orderConfirmationText, renderOrderConfirmationEmail } from "../templates/order-confirmation.template.js";
+import { createOrderDetailToken } from "../utils/order-detail-link.js";
 
 // Đảm bảo DNS ưu tiên IPv4 khi chạy trên cloud container
 if (dns.setDefaultResultOrder) {
@@ -256,6 +257,7 @@ export const createEmailService = ({
             frontendUrl: env.FRONTEND_URL,
             supportEmail: env.SUPPORT_EMAIL || env.EMAIL_USER,
             hotline: env.SUPPORT_HOTLINE,
+            orderDetailToken: createOrderDetailToken(order, { env }),
           }),
           idempotencyKey,
         });

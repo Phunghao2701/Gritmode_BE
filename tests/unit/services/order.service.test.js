@@ -283,6 +283,11 @@ describe("order service", () => {
           if (id === 2 && uid === "u1") return { order_id: 2, user_id: "u1", status_order: "shipping" };
           return null;
         },
+        lockOrderById: async (id) => {
+          if (id === 1) return { order_id: 1, user_id: "u1", status_order: "pending" };
+          if (id === 2) return { order_id: 2, user_id: "u1", status_order: "shipping" };
+          return null;
+        },
         findAdminOrderById: async () => null,
         findOrderItems: async () => [],
         updateOrderStatus: async () => ({ order_id: 1, status_order: "cancelled" }),
@@ -291,6 +296,7 @@ describe("order service", () => {
         releaseReservedStock: async () => {},
       },
       payments: {
+        getOrderPayment: async () => null,
         cancelPendingPaymentByOrderId: async () => {},
       },
       transaction,
@@ -325,6 +331,11 @@ describe("order service", () => {
           }
           return null;
         },
+        lockOrderById: async (id) => {
+          if (id === 10) return { order_id: 10, order_code: "G1", status_order: "pending" };
+          if (id === 20) return { order_id: 20, order_code: "G2", status_order: "completed" };
+          return null;
+        },
         findOrderItems: async () => [],
         updateOrderStatus: async () => ({ order_id: 10, status_order: "cancelled" }),
       },
@@ -332,6 +343,7 @@ describe("order service", () => {
         releaseReservedStock: async () => {},
       },
       payments: {
+        getOrderPayment: async () => null,
         cancelPendingPaymentByOrderId: async () => {},
       },
       transaction,
@@ -361,6 +373,47 @@ describe("order service", () => {
     const cancelled = await service.cancelGuestOrder("G1", { email: "g@test.com", phone: "0901234567" });
     assert.equal(cancelled.order_id, 10);
     assert.equal(cancelled.status_order, "cancelled");
+  });
+
+  test("user cancellation rejects an order with a paid PayOS payment after the lock", async () => {
+    let releaseCalls = 0;
+    const service = createOrderService({
+      orders: {
+        findUserOrderById: async () => ({ order_id: 30, user_id: "u1", status_order: "confirmed" }),
+        lockOrderById: async () => ({ order_id: 30, user_id: "u1", status_order: "confirmed" }),
+      },
+      payments: {
+        getOrderPayment: async () => ({ payment_method: "payos", status_payment: "paid" }),
+        cancelPendingPaymentByOrderId: async () => {},
+      },
+      inventories: { releaseReservedStock: async () => { releaseCalls += 1; } },
+      transaction,
+    });
+
+    await assert.rejects(
+      () => service.cancelUserOrder(30, "u1"),
+      (err) => err.statusCode === 409 && err.code === "PAID_ORDER_CANNOT_BE_DIRECTLY_CANCELLED",
+    );
+    assert.equal(releaseCalls, 0);
+  });
+
+  test("guest cancellation rejects an order with a paid PayOS payment after the lock", async () => {
+    const service = createOrderService({
+      orders: {
+        findGuestOrder: async () => ({ order_id: 31, order_code: "G31", status_order: "confirmed" }),
+        lockOrderById: async () => ({ order_id: 31, order_code: "G31", status_order: "confirmed" }),
+      },
+      payments: {
+        getOrderPayment: async () => ({ payment_method: "payos", status_payment: "paid" }),
+        cancelPendingPaymentByOrderId: async () => assert.fail("payment must not be cancelled"),
+      },
+      transaction,
+    });
+
+    await assert.rejects(
+      () => service.cancelGuestOrder("G31", { email: "g@test.com", phone: "0901234567" }),
+      (err) => err.statusCode === 409 && err.code === "PAID_ORDER_CANNOT_BE_DIRECTLY_CANCELLED",
+    );
   });
 });
 

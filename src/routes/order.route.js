@@ -13,6 +13,8 @@ import {
   createOrder,
   getMyOrders,
   getMyOrderById,
+  getSharedOrderById,
+  createOrderDetailLink,
   cancelMyOrder,
   lookupGuestOrder,
   cancelGuestOrder,
@@ -287,6 +289,19 @@ router.get(
   optionalAuth,
   validateParam("orderId", validatePositiveId),
   getMyOrderById,
+);
+
+router.get(
+  "/shared/:orderId",
+  validateParam("orderId", validatePositiveId),
+  getSharedOrderById,
+);
+
+router.post(
+  "/:orderId/detail-link",
+  optionalAuth,
+  validateParam("orderId", validatePositiveId),
+  createOrderDetailLink,
 );
 
 /**

@@ -253,11 +253,9 @@ export const orderRepository = {
     const order = rows[0];
     if (!order) return null;
 
-    const [items, address, paymentRes] = await Promise.all([
-      this.findOrderItems(orderId, client),
-      this.findOrderAddress(orderId, client),
-      runner(client).query(`SELECT * FROM payment WHERE order_id = $1`, [orderId]),
-    ]);
+    const items = await this.findOrderItems(orderId, client);
+    const address = await this.findOrderAddress(orderId, client);
+    const paymentRes = await runner(client).query(`SELECT * FROM payment WHERE order_id = $1`, [orderId]);
 
     return {
       ...order,
@@ -292,11 +290,9 @@ export const orderRepository = {
     const order = rows[0];
     if (!order) return null;
 
-    const [items, address, paymentRes] = await Promise.all([
-      this.findOrderItems(order.order_id, client),
-      this.findOrderAddress(order.order_id, client),
-      runner(client).query(`SELECT * FROM payment WHERE order_id = $1`, [order.order_id]),
-    ]);
+    const items = await this.findOrderItems(order.order_id, client);
+    const address = await this.findOrderAddress(order.order_id, client);
+    const paymentRes = await runner(client).query(`SELECT * FROM payment WHERE order_id = $1`, [order.order_id]);
 
     return {
       ...order,
@@ -492,11 +488,9 @@ export const orderRepository = {
     const order = rows[0];
     if (!order) return null;
 
-    const [items, address, paymentRes] = await Promise.all([
-      this.findOrderItems(orderId, client),
-      this.findOrderAddress(orderId, client),
-      runner(client).query(`SELECT * FROM payment WHERE order_id = $1`, [orderId]),
-    ]);
+    const items = await this.findOrderItems(orderId, client);
+    const address = await this.findOrderAddress(orderId, client);
+    const paymentRes = await runner(client).query(`SELECT * FROM payment WHERE order_id = $1`, [orderId]);
 
     return {
       ...order,

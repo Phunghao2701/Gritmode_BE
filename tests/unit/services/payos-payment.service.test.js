@@ -16,10 +16,12 @@ const payos = {
 describe("payOS payment service", () => {
   const sampleOrder = {
     order_id: 100,
+    order_code: "ORD-100",
     user_id: "user-1",
     status_order: "pending",
     total_order: 500000,
   };
+  const transaction = async (callback) => callback({});
 
   test("createPayOSPayment creates pending payOS payment with 15m expiration and QR", async () => {
     let createdPayload = null;
@@ -33,8 +35,10 @@ describe("payOS payment service", () => {
       },
       orders: {
         findById: async () => sampleOrder,
+        lockOrderById: async () => sampleOrder,
       },
       payos,
+      transaction,
     });
 
     const result = await service.createPayOSPayment({
@@ -72,8 +76,10 @@ describe("payOS payment service", () => {
       },
       orders: {
         findById: async () => sampleOrder,
+        lockOrderById: async () => sampleOrder,
       },
       payos,
+      transaction,
     });
 
     const result = await service.createPayOSPayment({
@@ -109,8 +115,10 @@ describe("payOS payment service", () => {
       },
       orders: {
         findById: async () => sampleOrder,
+        lockOrderById: async () => sampleOrder,
       },
       payos,
+      transaction,
     });
 
     const result = await service.createPayOSPayment({
@@ -201,11 +209,13 @@ describe("payOS payment service", () => {
         },
       },
       orders: {
-        updateOrderStatus: async () => {},
+        lockOrderById: async () => sampleOrder,
+        updateOrderStatus: async () => ({ ...sampleOrder, status_order: "confirmed" }),
         findAdminOrderById: async () => ({ order_id: 100, order_code: "ORD-100", email_order: "buyer@example.com", items: [], address: {} }),
       },
       notifications: { enqueuePaymentConfirmation: async ({ order }) => { enqueuedOrder = order; } },
       checksumKey,
+      transaction,
     });
 
     const result = await service.handlePayOSWebhook(webhookPayload);
@@ -270,6 +280,7 @@ describe("payOS payment service", () => {
     const webhookData = {
       orderCode: 20260831001,
       amount: 100000,
+      code: "00",
     };
     const signature = createPayOSSignature(webhookData, checksumKey);
     const service2 = createPaymentService({
@@ -284,8 +295,181 @@ describe("payOS payment service", () => {
     });
 
     await assert.rejects(
-      () => service2.handlePayOSWebhook({ data: webhookData, signature }),
+      () => service2.handlePayOSWebhook({ code: "00", success: true, data: webhookData, signature }),
       (err) => err.statusCode === 400 && err.code === "AMOUNT_MISMATCH",
+    );
+  });
+
+  test("handlePayOSWebhook rejects signed non-success provider results without mutation", async () => {
+    let transactionCalled = false;
+    const webhookData = { orderCode: 20260831002, amount: 500000, code: "01" };
+    const signature = createPayOSSignature(webhookData, checksumKey);
+    const service = createPaymentService({
+      payments: {
+        findByPayOSOrderCode: async () => ({
+          payment_id: 2,
+          order_id: 100,
+          payos_order_code: webhookData.orderCode,
+          amount_payment: 500000,
+          status_payment: "pending",
+        }),
+      },
+      checksumKey,
+      transaction: async () => {
+        transactionCalled = true;
+        throw new Error("transaction must not run");
+      },
+    });
+
+    await assert.rejects(
+      () => service.handlePayOSWebhook({ code: "01", success: false, data: webhookData, signature }),
+      (err) => err.statusCode === 400 && err.code === "INVALID_WEBHOOK_STATUS",
+    );
+    assert.equal(transactionCalled, false);
+  });
+
+  test("late settlement marks cancelled payment paid and creates review only", async () => {
+    const webhookData = {
+      orderCode: 20260831003,
+      amount: 500000,
+      paymentLinkId: "link_3",
+      reference: "FT-LATE-3",
+      code: "00",
+    };
+    const signature = createPayOSSignature(webhookData, checksumKey);
+    const cancelledPayment = {
+      payment_id: 3,
+      order_id: 100,
+      payment_method: "payos",
+      status_payment: "cancelled",
+      amount_payment: 500000,
+      payos_order_code: webhookData.orderCode,
+      payos_payment_link_id: "link_3",
+    };
+    let confirmationCalls = 0;
+    let reviewPayload = null;
+    let orderUpdateCalls = 0;
+    const service = createPaymentService({
+      payments: {
+        findByPayOSOrderCode: async () => cancelledPayment,
+        markPayOSAsPaid: async () => ({ ...cancelledPayment, status_payment: "paid" }),
+      },
+      orders: {
+        lockOrderById: async () => ({ ...sampleOrder, status_order: "cancelled" }),
+        updateOrderStatus: async () => { orderUpdateCalls += 1; },
+      },
+      notifications: {
+        enqueuePaymentConfirmation: async () => { confirmationCalls += 1; },
+        enqueuePayOSLatePaymentReview: async (payload) => { reviewPayload = payload; },
+      },
+      checksumKey,
+      transaction,
+    });
+
+    const result = await service.handlePayOSWebhook({ code: "00", success: true, data: webhookData, signature });
+    assert.equal(result.review_required, true);
+    assert.equal(result.status_payment, "paid");
+    assert.equal(orderUpdateCalls, 0);
+    assert.equal(confirmationCalls, 0);
+    assert.equal(reviewPayload.payment.payment_id, 3);
+  });
+
+  test("terminal payment states cannot be promoted by a valid webhook", async () => {
+    for (const status of ["failed", "expired", "processing", "refunded"]) {
+      const webhookData = { orderCode: 20260831010 + status.length, amount: 500000, code: "00" };
+      const signature = createPayOSSignature(webhookData, checksumKey);
+      let markCalls = 0;
+      const service = createPaymentService({
+        payments: {
+          findByPayOSOrderCode: async () => ({
+            payment_id: 10,
+            order_id: 100,
+            payment_method: "payos",
+            payos_order_code: webhookData.orderCode,
+            amount_payment: 500000,
+            status_payment: status,
+          }),
+          markPayOSAsPaid: async () => { markCalls += 1; },
+        },
+        orders: { lockOrderById: async () => sampleOrder },
+        checksumKey,
+        transaction,
+      });
+
+      await assert.rejects(
+        () => service.handlePayOSWebhook({ code: "00", success: true, data: webhookData, signature }),
+        (err) => err.statusCode === 409 && err.code === "PAYMENT_CANNOT_BE_SETTLED",
+      );
+      assert.equal(markCalls, 0);
+    }
+  });
+
+  test("polling uses the shared settlement path with exact amount and identity checks", async () => {
+    const payment = {
+      payment_id: 11,
+      order_id: 100,
+      payment_method: "payos",
+      status_payment: "pending",
+      amount_payment: 500000,
+      payos_order_code: 20260831011,
+      payos_payment_link_id: "link_11",
+    };
+    let updatedOrder = 0;
+    const service = createPaymentService({
+      orders: {
+        findById: async () => sampleOrder,
+        lockOrderById: async () => sampleOrder,
+        updateOrderStatus: async () => {
+          updatedOrder += 1;
+          return { ...sampleOrder, status_order: "confirmed" };
+        },
+      },
+      payments: {
+        findByOrderId: async () => payment,
+        findByPayOSOrderCode: async () => payment,
+        markPayOSAsPaid: async () => ({ ...payment, status_payment: "paid" }),
+      },
+      payos: {
+        get: async () => ({
+          status: "PAID",
+          amountPaid: 500000,
+          orderCode: 20260831011,
+          paymentLinkId: "link_11",
+          id: "provider-11",
+        }),
+      },
+      notifications: { enqueuePaymentConfirmation: async () => {} },
+      transaction,
+    });
+
+    const result = await service.getOrderPaymentStatus(100, { user_id: "user-1" });
+    assert.equal(result.status_payment, "paid");
+    assert.equal(updatedOrder, 1);
+  });
+
+  test("polling rejects a PAID response without both PayOS identity fields", async () => {
+    const payment = {
+      payment_id: 1,
+      order_id: 100,
+      payment_method: "payos",
+      status_payment: "pending",
+      amount_payment: 500000,
+      payos_order_code: 20260831011,
+      payos_payment_link_id: "link_11",
+    };
+
+    const service = createPaymentService({
+      orders: { findById: async () => sampleOrder },
+      payments: { findByOrderId: async () => payment },
+      payos: {
+        get: async () => ({ status: "PAID", amountPaid: 500000 }),
+      },
+      transaction,
+    });
+
+    await assert.rejects(
+      () => service.getOrderPaymentStatus(100, { user_id: "user-1" }),
+      (err) => err.code === "PAYOS_IDENTITY_MISMATCH" && err.statusCode === 400,
     );
   });
 
@@ -301,11 +485,13 @@ describe("payOS payment service", () => {
     const service = createPaymentService({
       payments: {
         findByOrderId: async () => pendingPayment,
-        cancelPendingPaymentByOrderId: async () => ({ ...pendingPayment, status_payment: "cancelled" }),
+        cancelPendingPayOSPaymentById: async () => ({ ...pendingPayment, status_payment: "cancelled" }),
       },
       orders: {
         findById: async () => sampleOrder,
+        lockOrderById: async () => sampleOrder,
       },
+      transaction,
     });
 
     const result = await service.cancelPayOSPaymentLink(100, { user_id: "user-1" });

@@ -2427,7 +2427,11 @@ export const validateGuestOrderLookup = (input = {}) => {
         return { ok: false, errors };
     }
 
-    if (!requiredString(input.order_code, 1, 100)) {
+    const normalizedOrderCode = typeof input.order_code === 'string'
+        ? input.order_code.trim().replace(/^#\s*/, '')
+        : input.order_code;
+
+    if (!requiredString(normalizedOrderCode, 1, 100)) {
         errors.push({ field: 'order_code', message: 'Mã đơn hàng là bắt buộc' });
     }
 
@@ -2445,7 +2449,7 @@ export const validateGuestOrderLookup = (input = {}) => {
     return {
         ok: true,
         value: {
-            order_code: input.order_code.trim(),
+            order_code: normalizedOrderCode,
             email: input.email.trim().toLowerCase(),
             phone: normalizedPhone,
         },

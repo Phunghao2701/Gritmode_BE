@@ -77,6 +77,7 @@ describe("order management service", () => {
       orders: {
         findUserOrderById: async () => sampleUserOrder,
         findOrderItems: async () => sampleUserOrder.items,
+        lockOrderById: async () => sampleUserOrder,
         updateOrderStatus: async (id, st) => {
           updatedStatus = st;
           return { ...sampleUserOrder, status_order: st };
@@ -88,6 +89,7 @@ describe("order management service", () => {
         },
       },
       payments: {
+        getOrderPayment: async () => sampleUserOrder.payment,
         cancelPendingPaymentByOrderId: async (id) => {
           cancelledPaymentOrderId = id;
         },
@@ -153,6 +155,7 @@ describe("order management service", () => {
       orders: {
         findGuestOrder: async () => sampleUserOrder,
         findOrderItems: async () => sampleUserOrder.items,
+        lockOrderById: async () => sampleUserOrder,
         updateOrderStatus: async (id, st) => ({ ...sampleUserOrder, status_order: st }),
       },
       inventories: {
@@ -161,6 +164,7 @@ describe("order management service", () => {
         },
       },
       payments: {
+        getOrderPayment: async () => sampleUserOrder.payment,
         cancelPendingPaymentByOrderId: async () => {},
       },
       transaction,

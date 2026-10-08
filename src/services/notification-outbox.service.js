@@ -63,6 +63,30 @@ export const createNotificationOutboxService = ({
       client,
     );
   },
+
+  async enqueuePayOSLatePaymentReview({ order, payment, client }) {
+    if (!order?.order_id || !payment?.payment_id) return null;
+
+    const providerReference = payment.payos_transaction_reference || null;
+    return adminNotifications.create(
+      {
+        eventType: "payment.late_settlement.review",
+        entityType: "order",
+        entityId: order.order_id,
+        dedupeKey: `payos-late-settlement:admin:${order.order_id}:${payment.payment_id}`,
+        title: "PayOS payment needs review",
+        body: `Payment for order ${order.order_code || order.order_id} arrived after cancellation.`,
+        payload: {
+          order_id: Number(order.order_id),
+          payment_id: Number(payment.payment_id),
+          amount_payment: Number(payment.amount_payment || 0),
+          provider_reference: providerReference,
+          reason: "PAYMENT_RECEIVED_AFTER_ORDER_CANCELLATION",
+        },
+      },
+      client,
+    );
+  },
 });
 
 export const notificationOutboxService = createNotificationOutboxService();
