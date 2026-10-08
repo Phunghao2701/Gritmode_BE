@@ -29,6 +29,28 @@ describe("email service", () => {
     assert.equal(result.message_id, "message-1");
   });
 
+  test("configures SMTP port 587 with STARTTLS when requested", async () => {
+    let config;
+    const service = createEmailService({
+      env: {
+        EMAIL_PROVIDER: "smtp",
+        EMAIL_USER: "sender@example.com",
+        EMAIL_PASS: "app-password",
+        SMTP_PORT: "587",
+        SMTP_SECURE: "false",
+      },
+      transportFactory: (receivedConfig) => {
+        config = receivedConfig;
+        return { verify: async () => true };
+      },
+    });
+
+    await service.verifyConnection();
+    assert.equal(config.port, 587);
+    assert.equal(config.secure, false);
+    assert.equal(config.requireTLS, true);
+  });
+
   test("rejects missing OAuth configuration", async () => {
     const service = createEmailService({ env: {}, transportFactory: () => assert.fail() });
     await assert.rejects(
@@ -64,6 +86,7 @@ describe("email service", () => {
         CLIENT_SECRET: "client-secret",
         REFRESH_TOKEN: "refresh-token",
         FRONTEND_URL: "https://gritmode.vn/",
+        ORDER_DETAIL_LINK_SECRET: "test-order-detail-secret",
         SUPPORT_HOTLINE: "0901 234 567",
       },
       transportFactory: () => ({
@@ -71,6 +94,7 @@ describe("email service", () => {
       }),
     });
     const order = {
+      order_id: 1,
       order_code: "ORD-001",
       email_order: "buyer@example.com",
       created_at: "2026-09-01T10:00:00Z",
@@ -100,17 +124,25 @@ describe("email service", () => {
     assert.doesNotMatch(message.html, /THANH TOÁN THÀNH CÔNG/);
     assert.match(message.html, /Essential &lt;Tee&gt;/);
     assert.match(message.html, /GRITMODE<\/div>/);
-    assert.match(message.html, /https:\/\/gritmode\.vn\/orders\/lookup\?orderCode=ORD-001/);
+    assert.match(message.html, /https:\/\/gritmode\.vn\/orders\/1\/success\?token=.+#order-details/);
   });
 
   test("shows paid wording only for a paid PayOS order", async () => {
     let html;
     const service = createEmailService({
-      env: { EMAIL_PROVIDER: "smtp", EMAIL_USER: "sender@example.com", CLIENT_ID: "id", CLIENT_SECRET: "secret", REFRESH_TOKEN: "refresh", FRONTEND_URL: "https://gritmode.vn" },
+      env: {
+        EMAIL_PROVIDER: "smtp",
+        EMAIL_USER: "sender@example.com",
+        CLIENT_ID: "id",
+        CLIENT_SECRET: "secret",
+        REFRESH_TOKEN: "refresh",
+        FRONTEND_URL: "https://gritmode.vn",
+        ORDER_DETAIL_LINK_SECRET: "test-order-detail-secret",
+      },
       transportFactory: () => ({ sendMail: async (message) => { html = message.html; return {}; } }),
     });
     await service.sendOrderConfirmationEmail({
-      order_code: "ORD-PAID", email_order: "buyer@example.com", created_at: new Date(),
+      order_id: 2, order_code: "ORD-PAID", email_order: "buyer@example.com", created_at: new Date(),
       subtotal_order: 100000, discount_order: 0, shipping_fee_order: 0, total_order: 100000,
       payment: { payment_method: "payos", status_payment: "paid" }, items: [], address: {},
     });

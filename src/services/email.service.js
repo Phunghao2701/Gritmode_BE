@@ -142,11 +142,18 @@ export const createEmailService = ({
       );
     }
 
+    const smtpHost = String(env.SMTP_HOST || "smtp.gmail.com").trim();
+    const smtpPort = Number(env.SMTP_PORT) || 465;
+    const smtpSecure = env.SMTP_SECURE === undefined
+      ? smtpPort === 465
+      : String(env.SMTP_SECURE).trim().toLowerCase() !== "false";
+
     const transportConfig = {
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpSecure,
       family: 4,
+      requireTLS: smtpPort === 587 && !smtpSecure,
       auth: hasAppPassword
         ? {
           user: env.EMAIL_USER.trim(),
@@ -160,6 +167,7 @@ export const createEmailService = ({
           refreshToken: env.REFRESH_TOKEN.trim(),
         },
       tls: {
+        servername: env.SMTP_TLS_SERVERNAME || smtpHost,
         rejectUnauthorized: false,
       },
       connectionTimeout: 10000,

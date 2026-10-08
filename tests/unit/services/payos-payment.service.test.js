@@ -5,10 +5,13 @@ import { createPayOSSignature } from "../../../src/utils/payos.js";
 
 const checksumKey = "test_checksum_key_12345";
 const payos = {
-  create: async ({ orderCode }) => ({
+  create: async ({ orderCode, description }) => ({
     checkoutUrl: `https://pay.payos.vn/${orderCode}`,
     qrCode: `QR-${orderCode}`,
     paymentLinkId: `link_${orderCode}`,
+    accountNumber: "123456789",
+    accountName: "GRITMODE STORE",
+    description,
   }),
   get: async () => null,
 };
@@ -53,6 +56,9 @@ describe("payOS payment service", () => {
     assert.ok(createdPayload.payos_order_code);
     assert.ok(createdPayload.checkout_url);
     assert.ok(createdPayload.qr_code);
+    assert.equal(createdPayload.payos_account_number, "123456789");
+    assert.equal(createdPayload.payos_account_name, "GRITMODE STORE");
+    assert.equal(createdPayload.payos_transfer_description, "ORDER100");
     assert.ok(createdPayload.expired_at);
   });
 
@@ -298,6 +304,44 @@ describe("payOS payment service", () => {
       () => service2.handlePayOSWebhook({ code: "00", success: true, data: webhookData, signature }),
       (err) => err.statusCode === 400 && err.code === "AMOUNT_MISMATCH",
     );
+  });
+
+  test("createPayOSPayment resolves bank name from PayOS BIN", async () => {
+    let resolvedBin = null;
+    let createdPayload = null;
+    const service = createPaymentService({
+      resolveBankName: async (bin) => {
+        resolvedBin = bin;
+        return "MBBank";
+      },
+      payments: {
+        findActivePaymentByOrderId: async () => null,
+        createPayment: async (payload) => {
+          createdPayload = payload;
+          return { payment_id: 1, ...payload };
+        },
+      },
+      orders: {
+        findById: async () => sampleOrder,
+        lockOrderById: async () => sampleOrder,
+      },
+      payos: {
+        ...payos,
+        create: async ({ orderCode, description }) => ({
+          ...(await payos.create({ orderCode, description })),
+          bin: "970422",
+        }),
+      },
+      transaction,
+    });
+
+    await service.createPayOSPayment({
+      orderId: 100,
+      user: { user_id: "user-1" },
+    });
+
+    assert.equal(resolvedBin, "970422");
+    assert.equal(createdPayload.payos_bank_name, "MBBank");
   });
 
   test("handlePayOSWebhook rejects signed non-success provider results without mutation", async () => {

@@ -1,6 +1,7 @@
 import { ok } from "../utils/api-response.js";
 import * as orderService from "../services/order.service.js";
 import logger from "../utils/logger.js";
+import { toClientOrder } from "../utils/client-response.js";
 
 export const createOrderController = ({
   orders = orderService,
@@ -15,7 +16,7 @@ export const createOrderController = ({
         owner: req.cartOwner,
         user: req.user || null,
       };
-      const result = await orders.createOrder(payload, context);
+      const result = toClientOrder(await orders.createOrder(payload, context));
       return ok(res, result, {
         status: 201,
         code: "ORDER_CREATED",
@@ -47,7 +48,7 @@ export const createOrderController = ({
   getMyOrderById: async (req, res, next) => {
     try {
       const orderId = req.validatedParams ? req.validatedParams.orderId : req.params.orderId;
-      const result = await orders.getUserOrderById(orderId, req.user?.user_id || null);
+      const result = toClientOrder(await orders.getUserOrderById(orderId, req.user?.user_id || null));
       return ok(res, result, { message: "Lấy chi tiết đơn hàng thành công" });
     } catch (error) {
       logger.error("[order] getMyOrderById error:", error);
@@ -61,7 +62,7 @@ export const createOrderController = ({
   getSharedOrderById: async (req, res, next) => {
     try {
       const orderId = req.validatedParams ? req.validatedParams.orderId : req.params.orderId;
-      const result = await orders.getSharedOrderById(orderId, req.query.token);
+      const result = toClientOrder(await orders.getSharedOrderById(orderId, req.query.token));
       return ok(res, result, { message: "Lấy chi tiết đơn hàng thành công" });
     } catch (error) {
       logger.error("[order] getSharedOrderById error:", error);
@@ -106,7 +107,7 @@ export const createOrderController = ({
   lookupGuestOrder: async (req, res, next) => {
     try {
       const payload = req.validatedBody || req.body;
-      const result = await orders.lookupGuestOrder(payload);
+      const result = toClientOrder(await orders.lookupGuestOrder(payload));
       return ok(res, result, { message: "Tra cứu đơn hàng thành công" });
     } catch (error) {
       logger.error("[order] lookupGuestOrder error:", error);

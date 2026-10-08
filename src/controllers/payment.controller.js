@@ -1,6 +1,7 @@
 import { ok, created } from "../utils/api-response.js";
 import * as paymentService from "../services/payment.service.js";
 import logger from "../utils/logger.js";
+import { toClientPayment } from "../utils/client-response.js";
 
 export const createPaymentController = ({
   payments = paymentService,
@@ -11,15 +12,15 @@ export const createPaymentController = ({
   createPayOSPayment: async (req, res, next) => {
     try {
       const payload = req.validatedBody || req.body || {};
-      const result = await payments.createPayOSPayment({
+      const result = toClientPayment(await payments.createPayOSPayment({
         orderId: payload.order_id,
         user: req.user || null,
         guestInfo: {
           guest_token: req.headers["x-guest-token"] || payload.guest_token,
-          email: payload.email,
-          phone: payload.phone,
+          email: req.headers["x-guest-email"] || payload.email,
+          phone: req.headers["x-guest-phone"] || payload.phone,
         },
-      });
+      }));
       return created(res, result, { message: "Tạo link thanh toán payOS thành công" });
     } catch (error) {
       logger.error("[payment] createPayOSPayment error:", error);
@@ -54,7 +55,7 @@ export const createPaymentController = ({
       const detailToken = req.headers["x-order-detail-token"];
       const actor = req.user ? { ...req.user, guestInfo } : { ...guestInfo };
       if (detailToken) actor.detailToken = detailToken;
-      const result = await payments.getOrderPaymentStatus(orderId, actor);
+      const result = toClientPayment(await payments.getOrderPaymentStatus(orderId, actor));
       return ok(res, result, { message: "Lấy trạng thái thanh toán thành công" });
     } catch (error) {
       logger.error("[payment] getOrderPayment error:", error);
@@ -73,7 +74,7 @@ export const createPaymentController = ({
         phone: req.headers["x-guest-phone"] || req.body?.phone,
       };
       const actor = req.user ? { ...req.user, guestInfo } : guestInfo;
-      const result = await payments.cancelPayOSPaymentLink(orderId, actor);
+      const result = toClientPayment(await payments.cancelPayOSPaymentLink(orderId, actor));
       return ok(res, result, { message: "Hủy link thanh toán thành công" });
     } catch (error) {
       logger.error("[payment] cancelPayOSPayment error:", error);
