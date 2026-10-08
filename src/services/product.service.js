@@ -52,6 +52,42 @@ const findExistingBySkus = async (repository, skus = [], client) => {
   return found;
 };
 
+const normalizeName = (value) => String(value ?? "").trim().toLowerCase();
+const normalizeSku = (value) => String(value ?? "").trim().toUpperCase();
+
+const normalizeNullableNumber = (value) => {
+  if (value === undefined || value === null || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : value;
+};
+
+const normalizeDate = (value) => {
+  if (value === undefined || value === null || value === "") return null;
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? String(value) : timestamp;
+};
+
+const sameNumberSet = (left = [], right = []) => {
+  const normalize = (values) => [...new Set(values.map(Number).filter(Number.isInteger))].sort((a, b) => a - b);
+  const normalizedLeft = normalize(left);
+  const normalizedRight = normalize(right);
+  return normalizedLeft.length === normalizedRight.length
+    && normalizedLeft.every((value, index) => value === normalizedRight[index]);
+};
+
+const sameOrderedNumbers = (left = [], right = []) => {
+  const normalizedLeft = left.map(Number);
+  const normalizedRight = right.map(Number);
+  return normalizedLeft.length === normalizedRight.length
+    && normalizedLeft.every((value, index) => value === normalizedRight[index]);
+};
+
+const optionValueKey = (optionName, value) => `${normalizeName(optionName)}\u0000${normalizeName(value)}`;
+
+const getVariantOptionValueIds = (variant) => (variant?.option_values || [])
+  .map((optionValue) => Number(optionValue.product_option_value_id))
+  .filter(Number.isInteger);
+
 export const createProductService = ({
   products = productRepository,
   audit = auditRepository,
@@ -338,18 +374,27 @@ export const createProductService = ({
         }
       }
 
-      const existingVariantIds = new Set(existing.variants.map((variant) => Number(variant.product_variant_id)));
+      const existingVariantsInProduct = existing.variants || [];
+      const categoryInputs = input.category_ids || [];
+      const collectionInputs = input.collection_ids || [];
+      const optionInputs = input.options || [];
+      const variantInputs = input.variants || [];
+      const imageInputs = input.images || [];
+      const existingVariantIds = new Set(existingVariantsInProduct.map((variant) => Number(variant.product_variant_id)));
+      const existingVariantById = new Map(
+        existingVariantsInProduct.map((variant) => [Number(variant.product_variant_id), variant]),
+      );
       const retainedVariantIds = new Set();
       const existingVariants = await findExistingBySkus(
         variants,
-        input.variants.map((variant) => variant.sku),
+        variantInputs.map((variant) => variant.sku),
         client,
       );
       const existingVariantBySku = new Map(
         existingVariants.map((variant) => [String(variant.sku).trim().toLowerCase(), variant]),
       );
 
-      for (const variantInput of input.variants) {
+      for (const variantInput of variantInputs) {
         if (variantInput.product_variant_id && !existingVariantIds.has(Number(variantInput.product_variant_id))) {
           throw conflict("VARIANT_NOT_IN_PRODUCT", `Biến thể ${variantInput.product_variant_id} không thuộc sản phẩm này`);
         }
@@ -359,64 +404,187 @@ export const createProductService = ({
         }
       }
 
-      await products.update(productId, input, client);
+      const productPatch = {};
+      if (input.name_product !== undefined && String(input.name_product ?? "") !== String(existing.name_product ?? "")) {
+        productPatch.name_product = input.name_product;
+      }
+      if (input.description !== undefined && String(input.description ?? "") !== String(existing.description ?? "")) {
+        productPatch.description = input.description;
+      }
+      if (input.status_product !== undefined && input.status_product !== existing.status_product) {
+        productPatch.status_product = input.status_product;
+      }
+      if (Object.keys(productPatch).length > 0) {
+        await products.update(productId, productPatch, client);
+      }
 
       const valueIdByReference = new Map();
-      for (const optionInput of input.options) {
-        let option = await options.findByNameAndProduct(productId, optionInput.name_option, client);
-        if (!option) option = await options.create(productId, optionInput, client);
+      const existingOptions = existing.options || [];
+      const existingOptionByName = new Map(existingOptions.map((option) => [normalizeName(option.name_option), option]));
+      const seenOptionNames = new Set();
+      let optionsChanged = false;
+
+      for (const optionInput of optionInputs) {
+        const optionName = normalizeName(optionInput.name_option);
+        seenOptionNames.add(optionName);
+        let option = existingOptionByName.get(optionName) || null;
+        if (!option && typeof options.findByNameAndProduct === "function") {
+          option = await options.findByNameAndProduct(productId, optionInput.name_option, client);
+        }
+        if (!option) {
+          option = await options.create(productId, optionInput, client);
+          optionsChanged = true;
+        }
+
+        const existingValues = option.values || [];
+        const existingValueByName = new Map(existingValues.map((value) => [normalizeName(value.value_option), value]));
+        const seenValueNames = new Set();
         for (const rawValue of optionInput.values) {
           const valueInput = normalizeOptionValueInput(rawValue);
-          let optionValue = await options.findValueByNameAndOption(option.product_option_id, valueInput.value_option, client);
+          const valueName = normalizeName(valueInput.value_option);
+          seenValueNames.add(valueName);
+          let optionValue = existingValueByName.get(valueName) || null;
+          if (!optionValue && typeof options.findValueByNameAndOption === "function") {
+            optionValue = await options.findValueByNameAndOption(option.product_option_id, valueInput.value_option, client);
+          }
           if (!optionValue) {
             optionValue = await options.createValue(option.product_option_id, valueInput, client);
-          } else {
+            optionsChanged = true;
+          } else if (
+            String(optionValue.value_option ?? "") !== String(valueInput.value_option ?? "")
+            || Boolean(optionValue.is_hidden) !== Boolean(valueInput.is_hidden)
+          ) {
             optionValue = await options.updateValue(optionValue.product_option_value_id, valueInput, client);
+            optionsChanged = true;
           }
           valueIdByReference.set(
-            `${optionInput.name_option.toLowerCase()}\u0000${valueInput.value_option.toLowerCase()}`,
+            optionValueKey(optionInput.name_option, valueInput.value_option),
             Number(optionValue.product_option_value_id),
           );
         }
+        if (existingValues.length !== seenValueNames.size || existingValues.some((value) => !seenValueNames.has(normalizeName(value.value_option)))) {
+          optionsChanged = true;
+        }
+      }
+      if (existingOptions.length !== seenOptionNames.size || existingOptions.some((option) => !seenOptionNames.has(normalizeName(option.name_option)))) {
+        optionsChanged = true;
       }
 
-      for (const variantInput of input.variants) {
-        const optionValueIds = input.options.map((option) =>
-          valueIdByReference.get(`${option.name_option.toLowerCase()}\u0000${variantInput.option_values[option.name_option].toLowerCase()}`),
+      for (const variantInput of variantInputs) {
+        const optionValueIds = optionInputs.map((option) =>
+          valueIdByReference.get(optionValueKey(option.name_option, variantInput.option_values?.[option.name_option])),
         );
-        let variant;
-        if (variantInput.product_variant_id) {
-          variant = await variants.update(variantInput.product_variant_id, variantInput, client);
-          retainedVariantIds.add(Number(variantInput.product_variant_id));
+        const variantId = variantInput.product_variant_id ? Number(variantInput.product_variant_id) : null;
+        if (variantId) {
+          const existingVariant = existingVariantById.get(variantId);
+          const variantPatch = {};
+          if (normalizeSku(existingVariant.sku) !== normalizeSku(variantInput.sku)) variantPatch.sku = variantInput.sku;
+          if (normalizeNullableNumber(existingVariant.price) !== normalizeNullableNumber(variantInput.price)) variantPatch.price = variantInput.price;
+          if (normalizeNullableNumber(existingVariant.sale_price) !== normalizeNullableNumber(variantInput.sale_price)) variantPatch.sale_price = variantInput.sale_price;
+          if (normalizeDate(existingVariant.sale_start_at) !== normalizeDate(variantInput.sale_start_at)) variantPatch.sale_start_at = variantInput.sale_start_at;
+          if (normalizeDate(existingVariant.sale_end_at) !== normalizeDate(variantInput.sale_end_at)) variantPatch.sale_end_at = variantInput.sale_end_at;
+          if (Object.keys(variantPatch).length > 0) {
+            await variants.update(variantId, variantPatch, client);
+          }
+
+          if (!sameNumberSet(getVariantOptionValueIds(existingVariant), optionValueIds)) {
+            await variants.replaceOptionValuesMap(variantId, optionValueIds, client);
+            optionsChanged = true;
+          }
+
+          const existingStock = existingVariant.inventory?.quantity_stock ?? existingVariant.quantity_stock;
+          if (normalizeNullableNumber(existingStock) !== normalizeNullableNumber(variantInput.quantity_stock)) {
+            await inventories.updateStock(variantId, variantInput.quantity_stock, client);
+          }
+          retainedVariantIds.add(variantId);
         } else {
-          variant = await variants.create(productId, variantInput, client);
+          const variant = await variants.create(productId, variantInput, client);
           await variants.initializeInventory(variant.product_variant_id, client);
           retainedVariantIds.add(Number(variant.product_variant_id));
+          await variants.createOptionValuesMap(variant.product_variant_id, optionValueIds, client);
+          await inventories.updateStock(variant.product_variant_id, variantInput.quantity_stock, client);
+          optionsChanged = true;
         }
-        await variants.replaceOptionValuesMap(variant.product_variant_id, optionValueIds, client);
-        await inventories.updateStock(variant.product_variant_id, variantInput.quantity_stock, client);
       }
 
+      let removedVariantCount = 0;
       for (const variantId of existingVariantIds) {
         if (retainedVariantIds.has(variantId)) continue;
         if (await variants.hasReferences(variantId, client)) {
           throw conflict("VARIANT_HAS_REFERENCES", `Không thể xóa biến thể ${variantId} vì đang được dùng trong giỏ hàng hoặc đơn hàng`);
         }
         await variants.delete(variantId, client);
+        removedVariantCount += 1;
       }
 
-      await products.deleteImagesByProduct(productId, client);
-
-      for (const imageInput of input.images) {
+      const existingImages = existing.images || [];
+      const existingImageById = new Map(existingImages.map((image) => [Number(image.product_image_id), image]));
+      const retainedImageIds = new Set();
+      let imagesChanged = false;
+      for (const [index, imageInput] of imageInputs.entries()) {
+        const imageId = imageInput.product_image_id ? Number(imageInput.product_image_id) : null;
         const optionValueId = imageInput.option_value
-          ? valueIdByReference.get(`${imageInput.option_value.option_name.toLowerCase()}\u0000${imageInput.option_value.value.toLowerCase()}`)
+          ? valueIdByReference.get(optionValueKey(imageInput.option_value.option_name, imageInput.option_value.value))
           : null;
-        await images.create(productId, { ...imageInput, product_option_value_id: optionValueId }, client);
+        const position = imageInput.position_product_image ?? index;
+
+        if (imageId) {
+          const existingImage = existingImageById.get(imageId);
+          if (!existingImage) {
+            throw conflict("IMAGE_NOT_IN_PRODUCT", `áº¢nh ${imageId} khÃ´ng thuá»™c sáº£n pháº©m nÃ y`);
+          }
+          retainedImageIds.add(imageId);
+          const imagePatch = {};
+          if (existingImage.url_product_image !== imageInput.url_product_image) imagePatch.url_product_image = imageInput.url_product_image;
+          const currentOptionValueId = existingImage.product_option_value_id ?? null;
+          if (Number(currentOptionValueId || 0) !== Number(optionValueId ?? currentOptionValueId ?? 0)) {
+            imagePatch.product_option_value_id = optionValueId;
+          }
+          if (Number(existingImage.position_product_image) !== Number(position)) imagePatch.position_product_image = position;
+          if (Object.keys(imagePatch).length > 0) {
+            await images.update(imageId, imagePatch, client);
+            imagesChanged = true;
+          }
+        } else {
+          await images.create(productId, { ...imageInput, product_option_value_id: optionValueId, position_product_image: position }, client);
+          imagesChanged = true;
+        }
       }
-      await products.replaceCategories(productId, input.category_ids, input.primary_category_id, client);
-      await products.replaceCollections(productId, input.collection_ids || [], client);
-      
-      await products.deleteUnusedOptions(productId, client);
+
+      for (const existingImage of existingImages) {
+        const imageId = Number(existingImage.product_image_id);
+        if (retainedImageIds.has(imageId)) continue;
+        await images.delete(imageId, client);
+        imagesChanged = true;
+      }
+
+      const desiredCategoryIds = [...new Set(categoryInputs.map(Number))];
+      const existingCategoryIds = (existing.categories || []).map((category) => Number(category.category_id));
+      const existingPrimaryCategoryId = (existing.categories || []).find((category) => category.is_primary)?.category_id;
+      const categoriesChanged = !sameNumberSet(existingCategoryIds, desiredCategoryIds)
+        || Number(existingPrimaryCategoryId || 0) !== Number(input.primary_category_id || 0);
+      if (categoriesChanged) {
+        if (typeof products.syncCategories === "function") {
+          await products.syncCategories(productId, desiredCategoryIds, Number(input.primary_category_id), client);
+        } else {
+          await products.replaceCategories(productId, desiredCategoryIds, Number(input.primary_category_id), client);
+        }
+      }
+
+      const desiredCollectionIds = [...new Set(collectionInputs.map(Number))];
+      const existingCollectionIds = (existing.collections || []).map((collection) => Number(collection.collection_id));
+      const collectionsChanged = !sameOrderedNumbers(existingCollectionIds, desiredCollectionIds);
+      if (collectionsChanged) {
+        if (typeof products.syncCollections === "function") {
+          await products.syncCollections(productId, desiredCollectionIds, client);
+        } else {
+          await products.replaceCollections(productId, desiredCollectionIds, client);
+        }
+      }
+
+      if (optionsChanged || removedVariantCount > 0 || imagesChanged) {
+        await products.deleteUnusedOptions(productId, client);
+      }
 
       const updated = await products.findDetail(productId, client);
       if (audit?.log) {

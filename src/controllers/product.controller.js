@@ -4,6 +4,7 @@ import * as productService from "../services/product.service.js";
 import { categoryRepository } from "../repositories/category.repository.js";
 import { collectionRepository } from "../repositories/collection.repository.js";
 import { redisService } from "../services/redis.service.js";
+import logger from "../utils/logger.js";
 
 // In-process memory cache (Tier 1: <1ms instant response)
 const memCacheProducts = new Map();
@@ -21,6 +22,15 @@ export const invalidateProductCache = async () => {
     redisService.delByPattern("admin:products:*"),
     redisService.delByPattern("dashboard:*"),
   ]);
+};
+
+// Cache invalidation is post-commit housekeeping. Do not hold the product
+// mutation response open while Redis scans the cache keyspace.
+const scheduleProductCacheInvalidation = () => {
+  clearProductMemoryCache();
+  void invalidateProductCache().catch((error) => {
+    logger.error("[product] background cache invalidation failed", error);
+  });
 };
 
 export const createProductController = ({ service = productService } = {}) => ({
@@ -137,12 +147,7 @@ export const createProductController = ({ service = productService } = {}) => ({
     try {
       const productId = validatePositiveId(req.params.productId);
       const data = await service.publishProduct(productId, req.user?.user_id);
-      clearProductMemoryCache();
-      await Promise.all([
-        redisService.delByPattern("products:*"),
-        redisService.delByPattern("admin:products:*"),
-        redisService.delByPattern("dashboard:*"),
-      ]);
+      scheduleProductCacheInvalidation();
       return ok(res, data, { code: "PRODUCT_PUBLISHED", message: "Product published successfully" });
     } catch (e) { next(e); }
   },
@@ -151,12 +156,7 @@ export const createProductController = ({ service = productService } = {}) => ({
     try {
       const productId = validatePositiveId(req.params.productId);
       const data = await service.archiveProduct(productId, req.user?.user_id);
-      clearProductMemoryCache();
-      await Promise.all([
-        redisService.delByPattern("products:*"),
-        redisService.delByPattern("admin:products:*"),
-        redisService.delByPattern("dashboard:*"),
-      ]);
+      scheduleProductCacheInvalidation();
       return ok(res, data, { code: "PRODUCT_ARCHIVED", message: "Product archived successfully" });
     } catch (e) { next(e); }
   },
@@ -165,12 +165,7 @@ export const createProductController = ({ service = productService } = {}) => ({
     try {
       const createMethod = service.createProduct || service.create;
       const data = await createMethod.call(service, req.validatedBody || req.body, req.user?.user_id);
-      clearProductMemoryCache();
-      await Promise.all([
-        redisService.delByPattern("products:*"),
-        redisService.delByPattern("admin:products:*"),
-        redisService.delByPattern("dashboard:*"),
-      ]);
+      scheduleProductCacheInvalidation();
       return ok(res, data, { status: 201, code: "PRODUCT_CREATED", message: "Product created successfully" });
     } catch (e) {
       next(e);
@@ -180,12 +175,7 @@ export const createProductController = ({ service = productService } = {}) => ({
   createFullProduct: async (req, res, next) => {
     try {
       const data = await service.createFullProduct(req.validatedBody || req.body, req.user?.user_id);
-      clearProductMemoryCache();
-      await Promise.all([
-        redisService.delByPattern("products:*"),
-        redisService.delByPattern("admin:products:*"),
-        redisService.delByPattern("dashboard:*"),
-      ]);
+      scheduleProductCacheInvalidation();
       return ok(res, data, { status: 201, code: "FULL_PRODUCT_CREATED", message: "Full product created successfully" });
     } catch (e) {
       next(e);
@@ -197,12 +187,7 @@ export const createProductController = ({ service = productService } = {}) => ({
       const productId = validatePositiveId(req.params.productId);
       const updateMethod = service.updateProduct || service.update;
       const data = await updateMethod.call(service, productId, req.validatedBody || req.body, req.user?.user_id);
-      clearProductMemoryCache();
-      await Promise.all([
-        redisService.delByPattern("products:*"),
-        redisService.delByPattern("admin:products:*"),
-        redisService.delByPattern("dashboard:*"),
-      ]);
+      scheduleProductCacheInvalidation();
       return ok(res, data, { code: "PRODUCT_UPDATED", message: "Product updated successfully" });
     } catch (e) {
       next(e);
@@ -213,12 +198,7 @@ export const createProductController = ({ service = productService } = {}) => ({
     try {
       const productId = validatePositiveId(req.params.productId);
       const data = await service.updateFullProduct(productId, req.validatedBody || req.body, req.user?.user_id);
-      clearProductMemoryCache();
-      await Promise.all([
-        redisService.delByPattern("products:*"),
-        redisService.delByPattern("admin:products:*"),
-        redisService.delByPattern("dashboard:*"),
-      ]);
+      scheduleProductCacheInvalidation();
       return ok(res, data, { code: "FULL_PRODUCT_UPDATED", message: "Full product updated successfully" });
     } catch (e) {
       next(e);
@@ -230,12 +210,7 @@ export const createProductController = ({ service = productService } = {}) => ({
       const productId = validatePositiveId(req.params.productId);
       const deleteMethod = service.deleteProduct || service.delete;
       const data = await deleteMethod.call(service, productId, req.user?.user_id);
-      clearProductMemoryCache();
-      await Promise.all([
-        redisService.delByPattern("products:*"),
-        redisService.delByPattern("admin:products:*"),
-        redisService.delByPattern("dashboard:*"),
-      ]);
+      scheduleProductCacheInvalidation();
       return ok(res, data, { code: "PRODUCT_ARCHIVED", message: "Product archived successfully" });
     } catch (e) {
       next(e);

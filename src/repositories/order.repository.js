@@ -74,12 +74,14 @@ export const orderRepository = {
           sku_order_item,
           variant_order_item,
           price_order_item,
+          original_price_order_item,
           quantity_order_item,
           total_order_item,
           created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
         RETURNING order_item_id, order_id, product_variant_id, name_product_order_item, sku_order_item,
-                  variant_order_item, price_order_item, quantity_order_item, total_order_item, created_at
+                  variant_order_item, price_order_item, original_price_order_item,
+                  quantity_order_item, total_order_item, created_at
       `;
       const values = [
         item.order_id,
@@ -88,6 +90,7 @@ export const orderRepository = {
         item.sku_order_item || null,
         item.variant_order_item || null,
         item.price_order_item,
+        item.original_price_order_item ?? item.price_order_item,
         item.quantity_order_item,
         item.total_order_item,
       ];
@@ -210,6 +213,7 @@ export const orderRepository = {
         sku_order_item,
         variant_order_item,
         price_order_item,
+        original_price_order_item,
         quantity_order_item,
         total_order_item,
         (SELECT pi.url_product_image FROM product_image pi
@@ -270,6 +274,7 @@ export const orderRepository = {
         order_id: Number(i.order_id),
         product_variant_id: i.product_variant_id ? Number(i.product_variant_id) : null,
         price_order_item: Number(i.price_order_item),
+        original_price_order_item: i.original_price_order_item == null ? null : Number(i.original_price_order_item),
         quantity_order_item: Number(i.quantity_order_item),
         total_order_item: Number(i.total_order_item),
       })),
@@ -307,6 +312,7 @@ export const orderRepository = {
         order_id: Number(i.order_id),
         product_variant_id: i.product_variant_id ? Number(i.product_variant_id) : null,
         price_order_item: Number(i.price_order_item),
+        original_price_order_item: i.original_price_order_item == null ? null : Number(i.original_price_order_item),
         quantity_order_item: Number(i.quantity_order_item),
         total_order_item: Number(i.total_order_item),
       })),
@@ -506,6 +512,7 @@ export const orderRepository = {
         order_id: Number(i.order_id),
         product_variant_id: i.product_variant_id ? Number(i.product_variant_id) : null,
         price_order_item: Number(i.price_order_item),
+        original_price_order_item: i.original_price_order_item == null ? null : Number(i.original_price_order_item),
         quantity_order_item: Number(i.quantity_order_item),
         total_order_item: Number(i.total_order_item),
       })),

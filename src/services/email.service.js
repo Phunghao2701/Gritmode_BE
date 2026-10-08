@@ -265,6 +265,7 @@ export const createEmailService = ({
             frontendUrl: env.FRONTEND_URL,
             supportEmail: env.SUPPORT_EMAIL || env.EMAIL_USER,
             hotline: env.SUPPORT_HOTLINE,
+            timeZone: env.APP_TIMEZONE || "Asia/Ho_Chi_Minh",
             orderDetailToken: createOrderDetailToken(order, { env }),
           }),
           idempotencyKey,
