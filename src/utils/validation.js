@@ -2483,6 +2483,48 @@ export const validateGuestOrderCancel = (input = {}) => {
     };
 };
 
+const CONTACT_TOPIC_VALUES = ['order_support', 'size_advice', 'product_feedback', 'product_question', 'partnership', 'other'];
+
+export const validateContactMessage = (input = {}) => {
+    const errors = [];
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        return { ok: false, errors: [{ field: 'body', message: 'Dữ liệu không hợp lệ' }] };
+    }
+
+    if (!requiredString(input.full_name, 2, 100)) {
+        errors.push({ field: 'full_name', message: 'Họ tên phải từ 2 đến 100 ký tự' });
+    }
+    if (!isValidEmail(input.email)) {
+        errors.push({ field: 'email', message: 'Email không đúng định dạng hoặc vượt quá độ dài cho phép' });
+    }
+    if (input.phone !== undefined && input.phone !== null && input.phone !== '') {
+        if (!requiredString(input.phone, 8, 20)) {
+            errors.push({ field: 'phone', message: 'Số điện thoại không hợp lệ' });
+        }
+    }
+    const topic = input.topic === undefined || input.topic === null || input.topic === ''
+        ? 'other'
+        : input.topic;
+    if (!CONTACT_TOPIC_VALUES.includes(topic)) {
+        errors.push({ field: 'topic', message: 'Chủ đề liên hệ không hợp lệ' });
+    }
+    if (!requiredString(input.message, 10, 2000)) {
+        errors.push({ field: 'message', message: 'Nội dung phải từ 10 đến 2000 ký tự' });
+    }
+
+    if (errors.length) return { ok: false, errors };
+    return {
+        ok: true,
+        value: {
+            fullName: input.full_name.trim(),
+            email: input.email.trim().toLowerCase(),
+            phone: input.phone ? input.phone.trim() : null,
+            topic,
+            message: input.message.trim(),
+        },
+    };
+};
+
 const ADMIN_ORDER_SORT_BY = ['created_at', 'updated_at', 'total_order'];
 const PAYMENT_METHOD_VALUES = ['cod', 'payos'];
 const PAYMENT_STATUS_VALUES = ['pending', 'paid', 'failed', 'refunded', 'cancelled'];

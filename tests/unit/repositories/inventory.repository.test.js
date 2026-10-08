@@ -105,9 +105,10 @@ describe("inventory repository", () => {
       const result = await inventoryRepository.updateStock(101, 25, mockClient);
       assert.ok(result);
       assert.equal(result.quantity_stock, 25);
+      assert.match(mockClient.query.mock.calls[0].arguments[0], /quantity_reserved <= \$1/);
     });
 
-    test("returns null when variant not found", async () => {
+    test("returns null when variant is not found or requested stock is below reserved", async () => {
       mockClient.query = mock.fn(async () => ({ rows: [], rowCount: 0 }));
       const result = await inventoryRepository.updateStock(999, 10, mockClient);
       assert.equal(result, null);

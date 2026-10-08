@@ -15,6 +15,23 @@ if (dns.setDefaultResultOrder) {
 
 const hashForIdempotency = (value) => createHash("sha256").update(String(value)).digest("hex");
 
+const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (char) => ({
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  "'": "&#39;",
+  '"': "&quot;",
+}[char]));
+
+const CONTACT_TOPIC_LABELS = {
+  order_support: "Hỗ trợ đơn hàng",
+  size_advice: "Tư vấn chọn size",
+  product_feedback: "Góp ý sản phẩm",
+  product_question: "Tư vấn sản phẩm",
+  partnership: "Hợp tác",
+  other: "Khác",
+};
+
 const otpTemplate = (otp) => `
 <!doctype html>
 <html lang="vi">
@@ -278,9 +295,57 @@ export const createEmailService = ({
         throw new AppError(502, "EMAIL_DELIVERY_FAILED", "Không thể gửi email xác nhận đơn hàng");
       }
     },
+
+    async sendContactEmail({ fullName, email, phone, topic, message }, { idempotencyKey } = {}) {
+      const supportEmail = String(env.SUPPORT_EMAIL || env.EMAIL_USER || "").trim();
+      if (!supportEmail) {
+        throw new AppError(500, "EMAIL_CONFIG_MISSING", "Thiếu SUPPORT_EMAIL hoặc EMAIL_USER");
+      }
+
+      const topicLabel = CONTACT_TOPIC_LABELS[topic] || CONTACT_TOPIC_LABELS.other;
+      const safeName = escapeHtml(fullName);
+      const safeEmail = escapeHtml(email);
+      const safePhone = escapeHtml(phone || "Không cung cấp");
+      const safeMessage = escapeHtml(message).replace(/\n/g, "<br>");
+      const text = [
+        `Họ tên: ${fullName}`,
+        `Email: ${email}`,
+        `Số điện thoại: ${phone || "Không cung cấp"}`,
+        `Chủ đề: ${topicLabel}`,
+        "",
+        "Nội dung:",
+        message,
+      ].join("\n");
+      const html = `
+        <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111">
+          <h2 style="margin:0 0 20px">Tin nhắn mới từ website Gritmode</h2>
+          <p><strong>Chủ đề:</strong> ${escapeHtml(topicLabel)}</p>
+          <p><strong>Họ tên:</strong> ${safeName}</p>
+          <p><strong>Email:</strong> ${safeEmail}</p>
+          <p><strong>Số điện thoại:</strong> ${safePhone}</p>
+          <p><strong>Nội dung:</strong></p>
+          <p style="white-space:normal">${safeMessage}</p>
+        </div>`;
+
+      try {
+        const result = await dispatchSend({
+          to: supportEmail,
+          subject: `[Gritmode Contact] ${topicLabel}`,
+          text,
+          html,
+          idempotencyKey: idempotencyKey || `contact:${hashForIdempotency(`${email}|${fullName}|${message}`)}`,
+        });
+        logger.info(`[email] Contact message sent from ${email}`);
+        return result;
+      } catch (error) {
+        logger.error(`[email] Failed to send contact message from ${email}`, error);
+        if (error instanceof AppError) throw error;
+        throw new AppError(502, "EMAIL_DELIVERY_FAILED", "Không thể gửi tin nhắn liên hệ");
+      }
+    },
   };
 };
 
 export const emailService = createEmailService();
-export const { sendOtpEmail, sendOrderConfirmationEmail } = emailService;
+export const { sendOtpEmail, sendOrderConfirmationEmail, sendContactEmail } = emailService;
 
