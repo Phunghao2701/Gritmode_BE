@@ -159,13 +159,13 @@ describe("voucher repository", () => {
   // ── hasOrderReferences ───────────────────────────────────────────────────
   describe("hasOrderReferences", () => {
     test("returns true if orders reference voucher", async () => {
-      mockClient.query = mock.fn(async () => ({ rows: [{ count: "3" }], rowCount: 1 }));
+      mockClient.query = mock.fn(async () => ({ rows: [{ has_ref: true }], rowCount: 1 }));
       const result = await voucherRepository.hasOrderReferences(10, mockClient);
       assert.equal(result, true);
     });
 
     test("returns false if no orders reference voucher", async () => {
-      mockClient.query = mock.fn(async () => ({ rows: [{ count: "0" }], rowCount: 1 }));
+      mockClient.query = mock.fn(async () => ({ rows: [{ has_ref: false }], rowCount: 1 }));
       const result = await voucherRepository.hasOrderReferences(10, mockClient);
       assert.equal(result, false);
     });

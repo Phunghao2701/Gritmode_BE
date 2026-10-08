@@ -78,6 +78,8 @@ describe("payOS utils and signature verification", () => {
     process.env.PAYOS_CLIENT_ID = "valid_client_id";
     process.env.PAYOS_API_KEY = "valid_api_key";
     process.env.PAYOS_CHECKSUM_KEY = "valid_checksum_key";
+    process.env.PAYOS_CANCEL_URL = "http://localhost:3000/payment/cancel";
+    process.env.PAYOS_RETURN_URL = "http://localhost:3000/payment/success";
 
     mock.method(axios, "post", async () => ({
       data: {
@@ -99,13 +101,19 @@ describe("payOS utils and signature verification", () => {
     mock.method(axios, "post", async () => ({
       data: { code: "01", desc: "error" },
     }));
-    assert.equal(await callPayOSCreatePaymentLink({ orderCode: 1002, amount: 500000 }), null);
+    await assert.rejects(
+      callPayOSCreatePaymentLink({ orderCode: 1002, amount: 500000 }),
+      (error) => error.code === "PAYOS_PROVIDER_FAILED" && error.statusCode === 502,
+    );
 
     // Network exception
     mock.method(axios, "post", async () => {
       throw new Error("network_fail");
     });
-    assert.equal(await callPayOSCreatePaymentLink({ orderCode: 1003, amount: 500000 }), null);
+    await assert.rejects(
+      callPayOSCreatePaymentLink({ orderCode: 1003, amount: 500000 }),
+      (error) => error.code === "PAYOS_PROVIDER_FAILED" && error.statusCode === 502,
+    );
   });
 
   test("getPayOSPaymentLinkInfo handles success and error responses", async () => {
@@ -126,12 +134,18 @@ describe("payOS utils and signature verification", () => {
     mock.method(axios, "get", async () => ({
       data: { code: "01" },
     }));
-    assert.equal(await getPayOSPaymentLinkInfo(1002), null);
+    await assert.rejects(
+      getPayOSPaymentLinkInfo(1002),
+      (error) => error.code === "PAYOS_PROVIDER_FAILED" && error.statusCode === 502,
+    );
 
     // Network error
     mock.method(axios, "get", async () => {
       throw new Error("conn_reset");
     });
-    assert.equal(await getPayOSPaymentLinkInfo(1003), null);
+    await assert.rejects(
+      getPayOSPaymentLinkInfo(1003),
+      (error) => error.code === "PAYOS_PROVIDER_FAILED" && error.statusCode === 502,
+    );
   });
 });

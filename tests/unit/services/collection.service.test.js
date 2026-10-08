@@ -1,5 +1,6 @@
-import { describe, test } from "node:test";
+import { beforeEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
+import { redisService } from "../../../src/services/redis.service.js";
 import {
   isCollectionVisible,
   getCollectionDisplayStatus,
@@ -18,7 +19,11 @@ import {
 } from "../../../src/services/collection.service.js";
 
 describe("collection service", () => {
-  const transaction = async (fn) => fn({});
+  const transaction = async (fn) => fn({ query: async () => ({ rowCount: 1, rows: [] }) });
+
+  beforeEach((t) => {
+    t.mock.method(redisService, "delByPattern", async () => true);
+  });
 
   test("isCollectionVisible checks active state and time bounds", () => {
     const now = new Date("2026-07-01T12:00:00Z");
@@ -185,11 +190,12 @@ describe("collection service", () => {
     const service = createCollectionService({
       collections: {
         findById: async (id) => (id === 1 ? { collection_id: 1 } : null),
+        delete: async () => true,
         updateStatus: async (id, status) => ({ collection_id: id, is_active: status }),
       },
       audits: {
         record: async ({ action }) => {
-          if (action === "disable_collection") deletedAudit = true;
+          if (action === "delete_collection") deletedAudit = true;
           if (action === "enable_collection") statusAudit = true;
         },
       },

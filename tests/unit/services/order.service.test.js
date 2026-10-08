@@ -283,6 +283,7 @@ describe("order service", () => {
           if (id === 2 && uid === "u1") return { order_id: 2, user_id: "u1", status_order: "shipping" };
           return null;
         },
+        findAdminOrderById: async () => null,
         findOrderItems: async () => [],
         updateOrderStatus: async () => ({ order_id: 1, status_order: "cancelled" }),
       },
@@ -324,6 +325,7 @@ describe("order service", () => {
           }
           return null;
         },
+        findOrderItems: async () => [],
         updateOrderStatus: async () => ({ order_id: 10, status_order: "cancelled" }),
       },
       inventories: {

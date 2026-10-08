@@ -57,6 +57,7 @@ describe("order management service", () => {
     const service = createOrderService({
       orders: {
         findUserOrderById: async () => null,
+        findAdminOrderById: async () => null,
       },
     });
 

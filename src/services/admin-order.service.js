@@ -4,14 +4,34 @@ import { inventoryRepository } from "../repositories/inventory.repository.js";
 import { paymentRepository } from "../repositories/payment.repository.js";
 import { auditRepository } from "../repositories/audit.repository.js";
 import { withTransaction } from "../config/database.js";
+import { realtimeBus } from "./realtime-bus.service.js";
 
 export const createAdminOrderService = ({
   orders = orderRepository,
   inventories = inventoryRepository,
   payments = paymentRepository,
   audits = auditRepository,
+  realtime = realtimeBus,
   transaction = withTransaction,
 } = {}) => {
+  const publishOrderUpdated = (order, previousStatus) => {
+    if (!realtime?.publish || !order) return;
+
+    const data = {
+      order_id: Number(order.order_id),
+      order_code: order.order_code,
+      previous_status_order: previousStatus,
+      status_order: order.status_order,
+    };
+
+    if (order.updated_at !== undefined) data.updated_at = order.updated_at;
+
+    realtime.publish({
+      type: "admin.order.updated",
+      data,
+    });
+  };
+
   return {
     /**
      * Get paginated admin orders
@@ -69,11 +89,14 @@ export const createAdminOrderService = ({
      * Confirm Order: pending -> confirmed
      */
     async confirmOrder(orderId, adminUserId) {
-      return transaction(async (client) => {
+      let previousStatus;
+      const result = await transaction(async (client) => {
         const order = await orders.lockOrderById(orderId, client);
         if (!order) {
           throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
         }
+
+        previousStatus = order.status_order;
 
         if (order.status_order !== "pending") {
           throw conflict(
@@ -113,17 +136,23 @@ export const createAdminOrderService = ({
           status_order: "confirmed",
         };
       });
+
+      publishOrderUpdated(result, previousStatus);
+      return result;
     },
 
     /**
      * Processing Order: confirmed -> processing
      */
     async processOrder(orderId, adminUserId) {
-      return transaction(async (client) => {
+      let previousStatus;
+      const result = await transaction(async (client) => {
         const order = await orders.lockOrderById(orderId, client);
         if (!order) {
           throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
         }
+
+        previousStatus = order.status_order;
 
         if (order.status_order !== "confirmed") {
           throw conflict(
@@ -155,17 +184,23 @@ export const createAdminOrderService = ({
           status_order: "processing",
         };
       });
+
+      publishOrderUpdated(result, previousStatus);
+      return result;
     },
 
     /**
      * Shipping Order: processing -> shipping
      */
     async shipOrder(orderId, adminUserId) {
-      return transaction(async (client) => {
+      let previousStatus;
+      const result = await transaction(async (client) => {
         const order = await orders.lockOrderById(orderId, client);
         if (!order) {
           throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
         }
+
+        previousStatus = order.status_order;
 
         if (order.status_order !== "processing") {
           throw conflict(
@@ -197,17 +232,23 @@ export const createAdminOrderService = ({
           status_order: "shipping",
         };
       });
+
+      publishOrderUpdated(result, previousStatus);
+      return result;
     },
 
     /**
      * Complete Order: shipping -> completed
      */
     async completeOrder(orderId, adminUserId) {
-      return transaction(async (client) => {
+      let previousStatus;
+      const result = await transaction(async (client) => {
         const order = await orders.lockOrderById(orderId, client);
         if (!order) {
           throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
         }
+
+        previousStatus = order.status_order;
 
         if (order.status_order !== "shipping") {
           throw conflict(
@@ -264,17 +305,23 @@ export const createAdminOrderService = ({
           status_order: "completed",
         };
       });
+
+      publishOrderUpdated(result, previousStatus);
+      return result;
     },
 
     /**
      * Cancel Order (pending / confirmed / processing -> cancelled)
      */
     async cancelOrder(orderId, { reason, adminUserId } = {}) {
-      return transaction(async (client) => {
+      let previousStatus;
+      const result = await transaction(async (client) => {
         const order = await orders.lockOrderById(orderId, client);
         if (!order) {
           throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
         }
+
+        previousStatus = order.status_order;
 
         if (!["pending", "confirmed", "processing"].includes(order.status_order)) {
           throw conflict(
@@ -329,6 +376,9 @@ export const createAdminOrderService = ({
           status_order: "cancelled",
         };
       });
+
+      publishOrderUpdated(result, previousStatus);
+      return result;
     },
   };
 };

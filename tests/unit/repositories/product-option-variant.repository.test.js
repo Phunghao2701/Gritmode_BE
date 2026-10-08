@@ -126,7 +126,7 @@ describe("product option & variant repositories", () => {
       { rows: [{ product_variant_id: 101, product_id: 100, sku: "DC-TS-BLK-M-V2", price: 590000 }] }, // update
       { rowCount: 2 }, // replaceOptionValuesMap delete
       { rowCount: 2 }, // replaceOptionValuesMap insert
-      { rows: [{ count: "1" }] }, // hasReferences true (cart/order)
+      { rows: [{ has_ref: true }] }, // hasReferences true (cart/order)
       { rowCount: 1 }, // delete
     ];
 
