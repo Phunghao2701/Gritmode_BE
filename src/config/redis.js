@@ -51,4 +51,10 @@ export const getRedisClient = () => {
   }
 };
 
-export const redis = getRedisClient();
+// Unit tests must not open a real Redis socket just by importing a service that
+// has an optional cache dependency. Production keeps the eager client behavior.
+const isNodeTestRuntime = process.env.NODE_ENV === "test"
+  || process.argv.includes("--test")
+  || process.execArgv.includes("--test");
+
+export const redis = isNodeTestRuntime ? null : getRedisClient();

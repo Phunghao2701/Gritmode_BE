@@ -175,7 +175,7 @@ describe("repositories", () => {
     const query = mock.method(pool, "query", async () => responses.shift());
 
     await cartRepository.mergeGuestCart({ guestToken: "token-1", userId: "u1" });
-    assert.equal(query.mock.calls.length, 5);
+    assert.equal(query.mock.calls.length, 6);
   });
 
   test("cart repository rejects inventory overflow before writes", async () => {

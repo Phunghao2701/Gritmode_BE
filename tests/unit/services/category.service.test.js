@@ -1,5 +1,6 @@
-import { describe, test } from "node:test";
+import { beforeEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
+import { redisService } from "../../../src/services/redis.service.js";
 import {
   buildCategoryTree,
   hasCategoryCycle,
@@ -7,7 +8,11 @@ import {
 } from "../../../src/services/category.service.js";
 
 describe("category service", () => {
-  const transaction = async (fn) => fn({});
+  const transaction = async (fn) => fn({ query: async () => ({ rowCount: 1, rows: [] }) });
+
+  beforeEach((t) => {
+    t.mock.method(redisService, "delByPattern", async () => true);
+  });
 
   test("buildCategoryTree builds hierarchical nested tree in memory", () => {
     const flatList = [
@@ -182,11 +187,12 @@ describe("category service", () => {
     const service = createCategoryService({
       categories: {
         findById: async (id) => (id === 1 ? { category_id: 1 } : null),
+        delete: async () => true,
         updateStatus: async (id, status) => ({ category_id: id, is_active: status }),
       },
       audits: {
         record: async ({ action }) => {
-          if (action === "disable_category") deletedAudit = true;
+          if (action === "delete_category") deletedAudit = true;
           if (action === "enable_category") statusAudit = true;
         },
       },
