@@ -13,6 +13,7 @@ export const getConfig = () => ({
   refreshTtlMs: integer(process.env.COOKIE_REFRESH_MAX_AGE, 30 * 24 * 60 * 60 * 1000),
   googleClientId: process.env.GOOGLE_CLIENT_ID || process.env.CLIENT_ID,
   emailProvider: process.env.EMAIL_PROVIDER,
+  appTimezone: process.env.APP_TIMEZONE || "Asia/Ho_Chi_Minh",
   redisUrl: process.env.REDIS_URL,
   payosClientId: process.env.PAYOS_CLIENT_ID,
   payosApiKey: process.env.PAYOS_API_KEY,
@@ -35,6 +36,12 @@ export const validateRuntimeConfig = (config = getConfig()) => {
   const provider = String(config.emailProvider).trim().toLowerCase();
   if (!["resend", "smtp", "brevo", "gmail"].includes(provider)) {
     throw new Error(`EMAIL_PROVIDER không được hỗ trợ: ${config.emailProvider}`);
+  }
+
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: config.appTimezone }).format();
+  } catch {
+    throw new Error(`APP_TIMEZONE khÃ´ng há»£p lá»‡: ${config.appTimezone}`);
   }
 
   if (provider === "resend" && !String(process.env.RESEND_API_KEY || "").trim()) {

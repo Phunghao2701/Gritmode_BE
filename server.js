@@ -13,6 +13,7 @@ const config = validateRuntimeConfig();
 const PORT = config.port;
 
 const server = app.listen(PORT, () => {
+  console.log(`[Runtime] APP_TIMEZONE=${config.appTimezone}`);
   console.log(`🚀 Server đang chạy tại: http://localhost:${PORT}`);
   console.log(`📚 Swagger Docs: http://localhost:${PORT}/api-docs`);
 });
