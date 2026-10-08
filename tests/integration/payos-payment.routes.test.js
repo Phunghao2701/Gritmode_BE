@@ -43,6 +43,9 @@ describe("payOS payment routes HTTP contract", () => {
           checkoutUrl: "https://pay.payos.vn/100",
           qrCode: "QR100",
           paymentLinkId: "link-100",
+          accountNumber: "123456789",
+          accountName: "GRITMODE STORE",
+          description: "ORDER100",
         },
       },
     }));
@@ -96,7 +99,10 @@ describe("payOS payment routes HTTP contract", () => {
     assert.equal(res.body.success, true);
     assert.equal(res.body.data.payment_method, "payos");
     assert.ok(res.body.data.checkout_url);
-    assert.ok(res.body.data.qr_code);
+    assert.ok(res.body.data.payment_display.qr_code);
+    assert.equal(res.body.data.payment_display.account_number, "123456789");
+    assert.equal(res.body.data.payment_display.account_name, "GRITMODE STORE");
+    assert.equal(res.body.data.payment_display.transfer_description, "ORDER100");
   });
 
   test("POST /api/v1/payments/payos/webhook processes valid webhook successfully", async () => {
