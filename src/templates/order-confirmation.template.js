@@ -31,11 +31,16 @@ const summaryRow = (label, value, strong = false) => `<tr>
   <td align="right" style="padding:${strong ? "16px 0 0" : "6px 0"};${strong ? "border-top:2px solid #111111;font-size:20px;font-weight:700" : "font-size:14px"}">${money(value)}</td>
 </tr>`;
 
-export const renderOrderConfirmationEmail = (order, { frontendUrl, supportEmail, hotline } = {}) => {
+export const renderOrderConfirmationEmail = (order, {
+  frontendUrl,
+  supportEmail,
+  hotline,
+  orderDetailToken,
+} = {}) => {
   const payment = order.payment || {};
   const paid = payment.payment_method === "payos" && payment.status_payment === "paid";
   const orderCode = escapeHtml(order.order_code);
-  const detailUrl = `${String(frontendUrl || "").replace(/\/$/, "")}/orders/lookup?orderCode=${encodeURIComponent(order.order_code)}`;
+  const detailUrl = `${String(frontendUrl || "").replace(/\/$/, "")}/orders/${encodeURIComponent(order.order_id)}/success?token=${encodeURIComponent(orderDetailToken)}#order-details`;
   const statusTitle = paid ? "THANH TOÁN THÀNH CÔNG" : "ĐƠN HÀNG ĐÃ ĐƯỢC TIẾP NHẬN";
   const statusText = paid
     ? `${money(order.total_order)} đã được ghi nhận qua PayOS / VietQR.<br>GRITMODE sẽ bắt đầu xử lý đơn hàng của bạn.`

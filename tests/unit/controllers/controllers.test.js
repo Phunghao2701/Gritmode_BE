@@ -645,16 +645,32 @@ describe("controllers", () => {
   });
 
   test("payment controller delegates to service and handles errors", async () => {
+    let capturedPaymentActor;
     const service = {
       createPayOSPayment: async () => ({ checkout_url: "https://pay.payos.vn/1" }),
       handlePayOSWebhook: async () => ({ status_payment: "paid" }),
-      getOrderPaymentStatus: async () => ({ status_payment: "pending" }),
+      getOrderPaymentStatus: async (orderId, actor) => {
+        capturedPaymentActor = { orderId, actor };
+        return { status_payment: "pending" };
+      },
       cancelPayOSPaymentLink: async () => ({ status_payment: "cancelled" }),
     };
     const controller = createPaymentController({ payments: service });
     await controller.createPayOSPayment(req({ validatedBody: { order_id: 1 } }), response(), assert.fail);
     await controller.handlePayOSWebhook(req({ validatedBody: {} }), response(), assert.fail);
-    await controller.getOrderPayment(req({ validatedParams: { orderId: 1 } }), response(), assert.fail);
+    await controller.getOrderPayment(req({
+      validatedParams: { orderId: 1 },
+      headers: { "x-guest-email": "guest@example.com", "x-guest-phone": "0901234567" },
+      user: { user_id: "u1", role: "customer" },
+    }), response(), assert.fail);
+    assert.deepEqual(capturedPaymentActor, {
+      orderId: 1,
+      actor: {
+        user_id: "u1",
+        role: "customer",
+        guestInfo: { email: "guest@example.com", phone: "0901234567" },
+      },
+    });
     await controller.cancelPayOSPayment(req({ validatedParams: { orderId: 1 } }), response(), assert.fail);
 
     const explodingService = {

@@ -54,6 +54,16 @@ describe("order management validation primitives", () => {
       assert.equal(res.value.phone, "0901234567");
     });
 
+    test("accepts guest lookup order code with a leading hash", () => {
+      const res = validateGuestOrderLookup({
+        order_code: "#ORD-20260831-000001",
+        email: "guest@example.com",
+        phone: "0901234567",
+      });
+      assert.ok(res.ok);
+      assert.equal(res.value.order_code, "ORD-20260831-000001");
+    });
+
     test("rejects missing or invalid fields", () => {
       const res = validateGuestOrderLookup({
         order_code: "",

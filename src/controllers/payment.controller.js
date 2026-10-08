@@ -47,10 +47,13 @@ export const createPaymentController = ({
   getOrderPayment: async (req, res, next) => {
     try {
       const orderId = req.validatedParams ? req.validatedParams.orderId : req.params.orderId;
-      const actor = req.user || {
+      const guestInfo = {
         email: req.headers["x-guest-email"] || req.query?.email,
         phone: req.headers["x-guest-phone"] || req.query?.phone,
       };
+      const detailToken = req.headers["x-order-detail-token"];
+      const actor = req.user ? { ...req.user, guestInfo } : { ...guestInfo };
+      if (detailToken) actor.detailToken = detailToken;
       const result = await payments.getOrderPaymentStatus(orderId, actor);
       return ok(res, result, { message: "Lấy trạng thái thanh toán thành công" });
     } catch (error) {
@@ -65,10 +68,11 @@ export const createPaymentController = ({
   cancelPayOSPayment: async (req, res, next) => {
     try {
       const orderId = req.validatedParams ? req.validatedParams.orderId : req.params.orderId;
-      const actor = req.user || {
+      const guestInfo = {
         email: req.headers["x-guest-email"] || req.body?.email,
         phone: req.headers["x-guest-phone"] || req.body?.phone,
       };
+      const actor = req.user ? { ...req.user, guestInfo } : guestInfo;
       const result = await payments.cancelPayOSPaymentLink(orderId, actor);
       return ok(res, result, { message: "Hủy link thanh toán thành công" });
     } catch (error) {

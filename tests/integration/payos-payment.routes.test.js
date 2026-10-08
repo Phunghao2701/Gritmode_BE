@@ -10,7 +10,12 @@ import { paymentRepository } from "../../src/repositories/payment.repository.js"
 import { createPayOSSignature } from "../../src/utils/payos.js";
 
 process.env.JWT_SECRET ||= "integration-test-secret";
-process.env.PAYOS_CHECKSUM_KEY ||= "integration-test-checksum-key";
+process.env.PAYOS_CLIENT_ID = "integration-test-client";
+process.env.PAYOS_API_KEY = "integration-test-api-key";
+process.env.PAYOS_CHECKSUM_KEY = "integration-test-checksum-key";
+process.env.PAYOS_CANCEL_URL = "http://localhost:3000/payment/cancel";
+process.env.PAYOS_RETURN_URL = "http://localhost:3000/payment/return";
+process.env.PAYOS_REQUEST_TIMEOUT_MS = "5000";
 const { default: app } = await import("../../src/app.js");
 
 const secret = process.env.JWT_SECRET;
@@ -37,6 +42,7 @@ describe("payOS payment routes HTTP contract", () => {
         data: {
           checkoutUrl: "https://pay.payos.vn/100",
           qrCode: "QR100",
+          paymentLinkId: "link-100",
         },
       },
     }));
@@ -52,6 +58,13 @@ describe("payOS payment routes HTTP contract", () => {
     mock.method(orderRepository, "updateOrderStatus", async () => ({
       order_id: 100,
       status_order: "confirmed",
+    }));
+    mock.method(orderRepository, "lockOrderById", async (orderId) => ({
+      order_id: Number(orderId),
+      order_code: "ORD-100",
+      status_order: "pending",
+      email_order: null,
+      user_id: "00000000-0000-4000-8000-000000000001",
     }));
   });
 
@@ -124,6 +137,9 @@ describe("payOS payment routes HTTP contract", () => {
     assert.equal(res.status, 200);
     assert.equal(res.body.success, true);
     assert.equal(res.body.data.status_payment, "paid");
+    assert.equal(res.body.data.acknowledged, true);
+    assert.equal(Object.hasOwn(res.body.data, "checkout_url"), false);
+    assert.equal(Object.hasOwn(res.body.data, "qr_code"), false);
   });
 
   test("GET /api/v1/orders/:orderId/payment returns payment status", async () => {
@@ -168,7 +184,7 @@ describe("payOS payment routes HTTP contract", () => {
 
     mock.method(orderRepository, "findById", async () => sampleOrder);
     mock.method(paymentRepository, "findByOrderId", async () => samplePayment);
-    mock.method(paymentRepository, "cancelPendingPaymentByOrderId", async () => ({
+    mock.method(paymentRepository, "cancelPendingPayOSPaymentById", async () => ({
       ...samplePayment,
       status_payment: "cancelled",
     }));
