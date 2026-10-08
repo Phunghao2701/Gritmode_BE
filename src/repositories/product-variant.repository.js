@@ -91,6 +91,23 @@ export const productVariantRepository = {
     return rows[0] || null;
   },
 
+  async findBySkus(skus = [], client) {
+    const normalizedSkus = [...new Set(
+      skus
+        .map((sku) => String(sku || '').trim().toLowerCase())
+        .filter(Boolean),
+    )];
+    if (!normalizedSkus.length) return [];
+
+    const { rows } = await runner(client).query(
+      `SELECT product_variant_id, product_id, sku
+       FROM product_variant
+       WHERE LOWER(TRIM(sku)) = ANY($1::text[])`,
+      [normalizedSkus],
+    );
+    return rows;
+  },
+
   async findOptionValuesDetails(optionValueIds, client) {
     if (!optionValueIds || optionValueIds.length === 0) return [];
     const query = `

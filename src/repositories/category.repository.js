@@ -66,6 +66,19 @@ export const categoryRepository = {
     return rows[0] || null;
   },
 
+  async findByIds(categoryIds = [], client) {
+    const ids = [...new Set(categoryIds.map((categoryId) => Number(categoryId)).filter(Number.isInteger))];
+    if (!ids.length) return [];
+
+    const { rows } = await runner(client).query(
+      `SELECT c.category_id
+       FROM category c
+       WHERE c.category_id = ANY($1::int[])`,
+      [ids],
+    );
+    return rows;
+  },
+
   async findBySlug(slug, client) {
     const query = `
       SELECT 

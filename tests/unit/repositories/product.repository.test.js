@@ -87,6 +87,37 @@ describe("product repository", () => {
     assert.equal(detail.collections[0].name_collection, "Summer");
   });
 
+  test("findDetail serializes relation queries when using a transaction client", async () => {
+    const responses = [
+      { rows: [] },
+      { rows: [] },
+      { rows: [] },
+      { rows: [] },
+      { rows: [] },
+    ];
+    let activeQueries = 0;
+    let maxConcurrentQueries = 0;
+    const transactionClient = {
+      query: async () => {
+        activeQueries += 1;
+        maxConcurrentQueries = Math.max(maxConcurrentQueries, activeQueries);
+        await Promise.resolve();
+        const response = responses.shift();
+        activeQueries -= 1;
+        return response;
+      },
+    };
+
+    const detail = await productRepository.findDetail(
+      1,
+      transactionClient,
+      { product_id: 1, name_product: "Shirt", description: null },
+    );
+
+    assert.equal(detail.product_id, 1);
+    assert.equal(maxConcurrentQueries, 1);
+  });
+
   test("create, update, delete and hasReferences operations", async () => {
     const responses = [
       { rows: [{ product_id: 1, name_product: "Created", description: null, created_at: new Date(), updated_at: new Date() }] },
