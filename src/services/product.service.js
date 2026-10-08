@@ -394,6 +394,23 @@ export const createProductService = ({
         existingVariants.map((variant) => [String(variant.sku).trim().toLowerCase(), variant]),
       );
 
+      // Keep full-product updates consistent with the dedicated inventory endpoint.
+      // A stock adjustment must never reduce on-hand stock below units already reserved by orders.
+      for (const variantInput of variantInputs) {
+        const variantId = variantInput.product_variant_id ? Number(variantInput.product_variant_id) : null;
+        if (!variantId) continue;
+
+        const existingVariant = existingVariantById.get(variantId);
+        const requestedStock = Number(variantInput.quantity_stock);
+        const reservedStock = Number(existingVariant?.inventory?.quantity_reserved ?? 0);
+        if (requestedStock < reservedStock) {
+          throw conflict(
+            "STOCK_BELOW_RESERVED",
+            `Tồn kho của variant ${variantId} không thể thấp hơn số lượng đang giữ (${reservedStock})`,
+          );
+        }
+      }
+
       for (const variantInput of variantInputs) {
         if (variantInput.product_variant_id && !existingVariantIds.has(Number(variantInput.product_variant_id))) {
           throw conflict("VARIANT_NOT_IN_PRODUCT", `Biến thể ${variantInput.product_variant_id} không thuộc sản phẩm này`);
@@ -494,7 +511,22 @@ export const createProductService = ({
 
           const existingStock = existingVariant.inventory?.quantity_stock ?? existingVariant.quantity_stock;
           if (normalizeNullableNumber(existingStock) !== normalizeNullableNumber(variantInput.quantity_stock)) {
-            await inventories.updateStock(variantId, variantInput.quantity_stock, client);
+            const reservedStock = Number(existingVariant.inventory?.quantity_reserved ?? 0);
+            const requestedStock = Number(variantInput.quantity_stock);
+            if (requestedStock < reservedStock) {
+              throw conflict(
+                "STOCK_BELOW_RESERVED",
+                `Tồn kho của variant ${variantId} không thể thấp hơn số lượng đang giữ (${reservedStock})`,
+              );
+            }
+
+            const updatedInventory = await inventories.updateStock(variantId, requestedStock, client);
+            if (!updatedInventory) {
+              throw conflict(
+                "STOCK_BELOW_RESERVED",
+                `Tồn kho của variant ${variantId} không thể thấp hơn số lượng đang giữ`,
+              );
+            }
           }
           retainedVariantIds.add(variantId);
         } else {

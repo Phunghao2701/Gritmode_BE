@@ -145,6 +145,7 @@ export const inventoryRepository = {
       UPDATE inventory
       SET quantity_stock = $1, updated_at = NOW()
       WHERE product_variant_id = $2
+        AND quantity_reserved <= $1
       RETURNING inventory_id, product_variant_id, quantity_stock, quantity_reserved,
                 (quantity_stock - quantity_reserved) AS quantity_available,
                 created_at, updated_at
