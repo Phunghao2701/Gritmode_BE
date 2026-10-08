@@ -189,6 +189,22 @@ describe("cod payment service", () => {
     assert.equal(res.payment_id, 100);
   });
 
+  test("cancelPendingPaymentByOrderId forwards to the repository", async () => {
+    const client = { id: "tx" };
+    const service = createPaymentService({
+      payments: {
+        cancelPendingPaymentByOrderId: async (id, receivedClient) => ({
+          payment_id: id,
+          client: receivedClient,
+        }),
+      },
+    });
+
+    const res = await service.cancelPendingPaymentByOrderId(100, client);
+    assert.equal(res.payment_id, 100);
+    assert.equal(res.client, client);
+  });
+
   test("createPayment routes to payos correctly", async () => {
     let createdData = null;
     const service = createPaymentService({
@@ -197,6 +213,13 @@ describe("cod payment service", () => {
           createdData = data;
           return data;
         },
+      },
+      payos: {
+        create: async () => ({
+          checkoutUrl: "https://payos.test/checkout",
+          qrCode: "000201010212",
+          paymentLinkId: "payment-link-1",
+        }),
       },
     });
     const res = await service.createPayment({ order: sampleOrder, paymentMethod: "payos", total: 500000 });

@@ -13,6 +13,10 @@ const paymentColumns = `
   payos_transaction_reference,
   checkout_url,
   qr_code,
+  payos_bank_name,
+  payos_account_number,
+  payos_account_name,
+  payos_transfer_description,
   expired_at,
   paid_at,
   created_at,
@@ -31,10 +35,14 @@ export const paymentRepository = {
         payos_payment_link_id,
         checkout_url,
         qr_code,
+        payos_bank_name,
+        payos_account_number,
+        payos_account_name,
+        payos_transfer_description,
         expired_at,
         created_at,
         updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
       RETURNING ${paymentColumns}
     `;
     const values = [
@@ -46,6 +54,10 @@ export const paymentRepository = {
       data.payos_payment_link_id || null,
       data.checkout_url || null,
       data.qr_code || null,
+      data.payos_bank_name || null,
+      data.payos_account_number || null,
+      data.payos_account_name || null,
+      data.payos_transfer_description || null,
       data.expired_at || null,
     ];
     const { rows } = await runner(client).query(query, values);
@@ -76,6 +88,29 @@ export const paymentRepository = {
       RETURNING ${paymentColumns}
     `;
     const { rows } = await runner(client).query(query, [orderId]);
+    return rows[0] || null;
+  },
+
+  async updatePayOSDisplay(paymentId, data = {}, client) {
+    const query = `
+      UPDATE payment
+      SET payos_bank_name = COALESCE($2, payos_bank_name),
+          payos_account_number = COALESCE($3, payos_account_number),
+          payos_account_name = COALESCE($4, payos_account_name),
+          payos_transfer_description = COALESCE($5, payos_transfer_description),
+          qr_code = COALESCE($6, qr_code),
+          updated_at = NOW()
+      WHERE payment_id = $1
+      RETURNING ${paymentColumns}
+    `;
+    const { rows } = await runner(client).query(query, [
+      paymentId,
+      data.payos_bank_name || null,
+      data.payos_account_number || null,
+      data.payos_account_name || null,
+      data.payos_transfer_description || null,
+      data.qr_code || null,
+    ]);
     return rows[0] || null;
   },
 

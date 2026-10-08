@@ -4,6 +4,14 @@ const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (char) => (
 
 const money = (value) => `${new Intl.NumberFormat("vi-VN").format(Number(value) || 0)} ₫`;
 
+const orderTimeZone = () => process.env.APP_TIMEZONE || "Asia/Ho_Chi_Minh";
+
+const formatOrderDate = (value) => new Intl.DateTimeFormat("vi-VN", {
+  dateStyle: "short",
+  timeStyle: "short",
+  timeZone: orderTimeZone(),
+}).format(new Date(value));
+
 const fullAddress = (address = {}) => [
   address.address_line_order_address,
   address.ward_order_address,
@@ -65,7 +73,7 @@ export const renderOrderConfirmationEmail = (order, {
   </td></tr>
   <tr><td style="padding:12px 32px 24px"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f3f3"><tr>
     <td width="50%" valign="top" style="padding:16px;font-size:12px;color:#666666">MÃ ĐƠN HÀNG<br><strong style="display:block;margin-top:5px;color:#111111;font-size:14px">#${orderCode}</strong></td>
-    <td width="50%" valign="top" style="padding:16px;font-size:12px;color:#666666">NGÀY ĐẶT<br><strong style="display:block;margin-top:5px;color:#111111;font-size:14px">${new Intl.DateTimeFormat("vi-VN", { dateStyle: "short", timeStyle: "short" }).format(new Date(order.created_at))}</strong></td>
+    <td width="50%" valign="top" style="padding:16px;font-size:12px;color:#666666">NGÀY ĐẶT<br><strong style="display:block;margin-top:5px;color:#111111;font-size:14px">${formatOrderDate(order.created_at)}</strong></td>
   </tr></table></td></tr>
   <tr><td style="padding:24px 32px;background:#111111;color:#ffffff"><div style="font-size:16px;font-weight:700">${statusTitle}</div><div style="margin-top:10px;color:#dddddd;font-size:14px;line-height:22px">${statusText}</div></td></tr>
   <tr><td style="padding:30px 32px"><div style="font-size:13px;font-weight:700">SẢN PHẨM</div><table role="presentation" width="100%" cellspacing="0" cellpadding="0">${itemRows(order.items)}</table></td></tr>

@@ -7,6 +7,7 @@ import {
   callPayOSCreatePaymentLink,
   getPayOSPaymentLinkInfo,
 } from "../utils/payos.js";
+import { resolveVietQrBankName } from "../utils/vietqr-bank-directory.js";
 import { withTransaction } from "../config/database.js";
 import { notificationOutboxService } from "./notification-outbox.service.js";
 import { verifyOrderDetailToken } from "../utils/order-detail-link.js";
@@ -25,10 +26,38 @@ export const createPaymentService = ({
     create: callPayOSCreatePaymentLink,
     get: getPayOSPaymentLinkInfo,
   },
+  resolveBankName = resolveVietQrBankName,
   notifications = null,
   transaction = withTransaction,
 } = {}) => {
   const runInTransaction = (callback, client) => (client ? callback(client) : transaction(callback));
+
+  const getPayOSDisplayData = async (payosData = {}, fallbackDescription = null) => ({
+    payos_bank_name: String(
+      payosData.bankName || (payosData.bin ? await resolveBankName(payosData.bin) : "") || "",
+    ).trim() || null,
+    payos_account_number: String(payosData.accountNumber || '').trim() || null,
+    payos_account_name: String(payosData.accountName || '').trim() || null,
+    payos_transfer_description:
+      String(payosData.description || fallbackDescription || '').trim().slice(0, 255) || null,
+    qr_code: payosData.qrCode || payosData.qr_code || null,
+  });
+
+  const syncPayOSDisplayData = async (payment, payosData, fallbackDescription, client) => {
+    if (!payments.updatePayOSDisplay) return payment;
+
+    const displayData = await getPayOSDisplayData(payosData, fallbackDescription);
+    const hasChanges = [
+      'payos_bank_name',
+      'payos_account_number',
+      'payos_account_name',
+      'payos_transfer_description',
+      'qr_code',
+    ].some((field) => displayData[field] && displayData[field] !== payment[field]);
+
+    if (!hasChanges) return payment;
+    return (await payments.updatePayOSDisplay(payment.payment_id, displayData, client)) || payment;
+  };
 
   const toSettlementAck = ({ payment, order, reviewRequired = false }) => ({
     acknowledged: true,
@@ -212,6 +241,10 @@ export const createPaymentService = ({
     return payments.findByOrderId(orderId, client);
   },
 
+  async cancelPendingPaymentByOrderId(orderId, client) {
+    return payments.cancelPendingPaymentByOrderId(orderId, client);
+  },
+
   /**
    * Create COD payment for order
    */
@@ -315,11 +348,14 @@ export const createPaymentService = ({
       amount: Number(order.total_order),
       description: `ORDER${order.order_id}`,
       orderId: order.order_id,
+      returnUrl: getOrderSuccessUrl(order.order_id),
+      cancelUrl: getOrderSuccessUrl(order.order_id),
     });
 
     const checkoutUrl = payosResult?.checkoutUrl;
     const qrCode = payosResult?.qrCode;
     const paymentLinkId = payosResult?.paymentLinkId;
+    const paymentDisplay = await getPayOSDisplayData(payosResult, `ORDER${order.order_id}`);
     if (!checkoutUrl || !qrCode || !paymentLinkId) {
       throw new AppError(502, "PAYOS_PROVIDER_FAILED", "PayOS trả về payment link không đầy đủ");
     }
@@ -362,6 +398,7 @@ export const createPaymentService = ({
           payos_payment_link_id: paymentLinkId,
           checkout_url: checkoutUrl,
           qr_code: qrCode,
+          ...paymentDisplay,
           expired_at: expiredAt,
         },
         tx,
@@ -435,6 +472,12 @@ export const createPaymentService = ({
       payment.payos_order_code
     ) {
       const payosInfo = await payos.get(payment.payos_order_code);
+      payment = await syncPayOSDisplayData(
+        payment,
+        payosInfo,
+        `ORDER${order.order_id}`,
+        client,
+      );
       const amount = assertPollingProviderResult(payosInfo, payment);
       if (amount !== null) {
         return settlePayOSPayment({
@@ -507,11 +550,14 @@ export const createPaymentService = ({
         amount: Number(total),
         description: `ORDER${order.order_id}`,
         orderId: order.order_id,
+        returnUrl: getOrderSuccessUrl(order.order_id),
+        cancelUrl: getOrderSuccessUrl(order.order_id),
       });
 
        const checkoutUrl = payosResult?.checkoutUrl;
        const qrCode = payosResult?.qrCode;
        const paymentLinkId = payosResult?.paymentLinkId;
+       const paymentDisplay = await getPayOSDisplayData(payosResult, `ORDER${order.order_id}`);
        if (!checkoutUrl || !qrCode || !paymentLinkId) {
          throw new AppError(502, "PAYOS_PROVIDER_FAILED", "PayOS trả về payment link không đầy đủ");
        }
@@ -526,6 +572,7 @@ export const createPaymentService = ({
           payos_payment_link_id: paymentLinkId,
           checkout_url: checkoutUrl,
           qr_code: qrCode,
+          ...paymentDisplay,
           expired_at: expiredAt,
         },
         client,
@@ -535,6 +582,17 @@ export const createPaymentService = ({
     throw badRequest("UNSUPPORTED_PAYMENT_METHOD", `Phương thức thanh toán không được hỗ trợ: ${paymentMethod}`);
   },
   };
+};
+
+const getOrderSuccessUrl = (orderId) => {
+  const frontendUrl = process.env.FRONTEND_URL || process.env.PAYOS_RETURN_URL;
+  if (!frontendUrl || !orderId) return undefined;
+
+  try {
+    return new URL(`/orders/${Number(orderId)}/success`, frontendUrl).toString();
+  } catch {
+    return undefined;
+  }
 };
 
 const defaultPaymentService = createPaymentService({ notifications: notificationOutboxService });
