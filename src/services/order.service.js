@@ -526,6 +526,8 @@ export const {
   createOrder,
   getUserOrders,
   getUserOrderById,
+  getSharedOrderById,
+  createOrderDetailLink,
   cancelUserOrder,
   lookupGuestOrder,
   cancelGuestOrder,

@@ -32,6 +32,13 @@ export const createAdminOrderService = ({
     });
   };
 
+  const getOrderPayment = async (order, orderId, client) => {
+    if (order && Object.prototype.hasOwnProperty.call(order, "payment")) {
+      return order.payment;
+    }
+    return payments.findByOrderId(orderId, client);
+  };
+
   return {
     /**
      * Get paginated admin orders
@@ -106,8 +113,8 @@ export const createAdminOrderService = ({
           );
         }
 
-        const fullOrder = await orders.findAdminOrderById(orderId, client);
-        if (fullOrder?.payment?.payment_method === "payos" && fullOrder?.payment?.status_payment !== "paid") {
+        const payment = await getOrderPayment(order, orderId, client);
+        if (payment?.payment_method === "payos" && payment?.status_payment !== "paid") {
           throw conflict(
             "PAYMENT_NOT_PAID",
             "Đơn hàng thanh toán trực tuyến payOS chưa được thanh toán",
@@ -258,8 +265,8 @@ export const createAdminOrderService = ({
           );
         }
 
-        const fullOrder = await orders.findAdminOrderById(orderId, client);
-        if (fullOrder?.payment?.payment_method === "payos" && fullOrder?.payment?.status_payment !== "paid") {
+        const payment = await getOrderPayment(order, orderId, client);
+        if (payment?.payment_method === "payos" && payment?.status_payment !== "paid") {
           throw conflict(
             "PAYMENT_NOT_PAID",
             "Đơn hàng payOS chưa được thanh toán thành công",
@@ -277,7 +284,7 @@ export const createAdminOrderService = ({
         }
 
         // 2. Mark COD as paid if applicable
-        if (fullOrder?.payment?.payment_method === "cod") {
+        if (payment?.payment_method === "cod") {
           await payments.markCodAsPaid(orderId, client);
         }
 
@@ -331,8 +338,8 @@ export const createAdminOrderService = ({
           );
         }
 
-        const fullOrder = await orders.findAdminOrderById(orderId, client);
-        if (fullOrder?.payment?.payment_method === "payos" && fullOrder?.payment?.status_payment === "paid") {
+        const payment = await getOrderPayment(order, orderId, client);
+        if (payment?.payment_method === "payos" && payment?.status_payment === "paid") {
           throw conflict(
             "PAID_ORDER_CANNOT_BE_DIRECTLY_CANCELLED",
             "Đơn hàng đã thanh toán trực tuyến không thể hủy trực tiếp, vui lòng thực hiện quy trình hoàn tiền",
