@@ -401,4 +401,58 @@ describe("product service", () => {
 
     assert.deepEqual(unexpectedCalls, []);
   });
+
+  test("updateFullProduct rejects stock below reserved quantity", async () => {
+    const detail = {
+      ...sampleDetail,
+      images: [{ product_image_id: 1, url_product_image: "https://img.jpg", position_product_image: 0, product_option_value_id: null }],
+      options: [{ product_option_id: 1, name_option: "Color", values: [{ product_option_value_id: 1, value_option: "Black", is_hidden: false }] }],
+      variants: [{
+        product_variant_id: 101,
+        sku: "TS-BLK-M",
+        price: 550000,
+        sale_price: null,
+        sale_start_at: null,
+        sale_end_at: null,
+        quantity_stock: 10,
+        inventory: { quantity_stock: 10, quantity_reserved: 3 },
+        option_values: [{ product_option_value_id: 1 }],
+      }],
+      categories: [{ category_id: 1, is_primary: true }],
+      collections: [{ collection_id: 1 }],
+    };
+    const service = createProductService({
+      products: { findDetail: async () => detail },
+      variants: {
+        findBySkus: async () => [{ product_variant_id: 101, product_id: 1, sku: "TS-BLK-M" }],
+      },
+      inventories: { updateStock: async () => { throw new Error("should not update stock"); } },
+      categories: { findById: async () => ({ category_id: 1 }) },
+      collections: { findById: async () => ({ collection_id: 1 }) },
+      transaction,
+    });
+
+    await assert.rejects(
+      service.updateFullProduct(1, {
+        name_product: "Logo T-Shirt",
+        description: "Oversized Cotton",
+        category_ids: [1],
+        primary_category_id: 1,
+        collection_ids: [1],
+        options: [{ name_option: "Color", values: [{ value_option: "Black", is_hidden: false }] }],
+        variants: [{
+          product_variant_id: 101,
+          sku: "TS-BLK-M",
+          price: 550000,
+          sale_price: null,
+          sale_start_at: null,
+          sale_end_at: null,
+          quantity_stock: 2,
+          option_values: { Color: "Black" },
+        }],
+        images: [{ product_image_id: 1, url_product_image: "https://img.jpg", position_product_image: 0 }],
+      }, "admin-1"),
+      (error) => error.code === "STOCK_BELOW_RESERVED" && error.statusCode === 409,
+    );
+  });
 });

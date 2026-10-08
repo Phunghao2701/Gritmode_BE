@@ -176,6 +176,17 @@ describe("inventory service", () => {
       const result = await service.updateInventory(101, { quantity_stock: 0 }, "admin");
       assert.ok(result);
     });
+
+    test("rejects when the conditional database update detects a concurrent reservation", async () => {
+      inventories.findByVariantId = mock.fn(async () => makeInventory({ quantity_reserved: 2 }));
+      inventories.updateStock = mock.fn(async () => null);
+
+      await assert.rejects(
+        () => service.updateInventory(101, { quantity_stock: 5 }, "admin"),
+        (err) => err.code === "STOCK_BELOW_RESERVED" && err.statusCode === 409,
+      );
+      assert.equal(audits.record.mock.calls.length, 0);
+    });
   });
 
   // ── checkAvailableStock ─────────────────────────────────────────────────

@@ -85,6 +85,12 @@ export const createInventoryService = ({
 
       return transaction(async (client) => {
         const updated = await inventories.updateStock(variantId, newStock, client);
+        if (!updated) {
+          throw conflict(
+            "STOCK_BELOW_RESERVED",
+            "Tồn kho không thể thấp hơn số lượng đang giữ do dữ liệu đã thay đổi trong lúc cập nhật",
+          );
+        }
 
         if (audits?.record) {
           await audits.record(
