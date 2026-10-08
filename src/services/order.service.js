@@ -192,6 +192,7 @@ export const createOrderService = ({
             sku_order_item: item.sku,
             variant_order_item: item.variant || null,
             price_order_item: price,
+            original_price_order_item: Number(item.original_price ?? item.originalPrice ?? price),
             quantity_order_item: qty,
             total_order_item: price * qty,
           };

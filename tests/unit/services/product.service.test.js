@@ -324,4 +324,81 @@ describe("product service", () => {
       (e) => e.code === "SKU_ALREADY_EXISTS",
     );
   });
+
+  test("updateFullProduct skips writes when the submitted product is unchanged", async () => {
+    const detail = {
+      ...sampleDetail,
+      description: "Oversized Cotton",
+      images: [{ product_image_id: 1, url_product_image: "https://img.jpg", position_product_image: 0, product_option_value_id: null }],
+      options: [{ product_option_id: 1, name_option: "Color", values: [{ product_option_value_id: 1, value_option: "Black", is_hidden: false }] }],
+      variants: [{
+        product_variant_id: 101,
+        sku: "TS-BLK-M",
+        price: 550000,
+        sale_price: null,
+        sale_start_at: null,
+        sale_end_at: null,
+        quantity_stock: 10,
+        inventory: { quantity_stock: 10 },
+        option_values: [{ product_option_value_id: 1 }],
+      }],
+      categories: [{ category_id: 1, is_primary: true }],
+      collections: [{ collection_id: 1 }],
+    };
+    const unexpectedCalls = [];
+    const failIfCalled = (name) => async () => {
+      unexpectedCalls.push(name);
+    };
+    const service = createProductService({
+      products: {
+        findDetail: async () => detail,
+        update: failIfCalled("product.update"),
+        syncCategories: failIfCalled("product.syncCategories"),
+        syncCollections: failIfCalled("product.syncCollections"),
+        replaceCategories: failIfCalled("product.replaceCategories"),
+        replaceCollections: failIfCalled("product.replaceCollections"),
+        deleteUnusedOptions: failIfCalled("product.deleteUnusedOptions"),
+      },
+      options: {},
+      variants: {
+        findBySkus: async () => [{ product_variant_id: 101, product_id: 1, sku: "TS-BLK-M" }],
+        update: failIfCalled("variant.update"),
+        replaceOptionValuesMap: failIfCalled("variant.replaceOptionValuesMap"),
+        hasReferences: failIfCalled("variant.hasReferences"),
+        delete: failIfCalled("variant.delete"),
+      },
+      inventories: { updateStock: failIfCalled("inventory.updateStock") },
+      images: {
+        update: failIfCalled("image.update"),
+        delete: failIfCalled("image.delete"),
+        create: failIfCalled("image.create"),
+      },
+      categories: { findById: async () => ({ category_id: 1 }) },
+      collections: { findById: async () => ({ collection_id: 1 }) },
+      audit: {},
+      transaction,
+    });
+
+    await service.updateFullProduct(1, {
+      name_product: "Logo T-Shirt",
+      description: "Oversized Cotton",
+      category_ids: [1],
+      primary_category_id: 1,
+      collection_ids: [1],
+      options: [{ name_option: "Color", values: [{ value_option: "Black", is_hidden: false }] }],
+      variants: [{
+        product_variant_id: 101,
+        sku: "TS-BLK-M",
+        price: 550000,
+        sale_price: null,
+        sale_start_at: null,
+        sale_end_at: null,
+        quantity_stock: 10,
+        option_values: { Color: "Black" },
+      }],
+      images: [{ product_image_id: 1, url_product_image: "https://img.jpg", position_product_image: 0 }],
+    }, "admin-1");
+
+    assert.deepEqual(unexpectedCalls, []);
+  });
 });

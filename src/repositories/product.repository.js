@@ -99,6 +99,7 @@ export const productRepository = {
     const sql = `
       SELECT
         p.product_id,
+        p.slug_product,
         p.name_product,
         p.description,
         p.status_product,
@@ -159,6 +160,7 @@ export const productRepository = {
     const { rows } = await runner(client).query(sql, values);
     return rows.map((row) => ({
       product_id: Number(row.product_id),
+      slug_product: row.slug_product,
       name_product: row.name_product,
       description: row.description,
       status_product: row.status_product,
@@ -438,6 +440,26 @@ export const productRepository = {
     }
   },
 
+  async syncCategories(productId, categoryIds, primaryCategoryId, client) {
+    const db = runner(client);
+    const ids = [...new Set(categoryIds.map(Number).filter(Number.isInteger))];
+    await db.query(
+      `DELETE FROM product_category
+       WHERE product_id = $1
+         AND NOT (category_id = ANY($2::bigint[]))`,
+      [productId, ids],
+    );
+    if (!ids.length) return;
+    await db.query(
+      `INSERT INTO product_category (product_id, category_id, is_primary)
+       SELECT $1, incoming.category_id, incoming.category_id = $2
+       FROM unnest($3::bigint[]) AS incoming(category_id)
+       ON CONFLICT (product_id, category_id)
+       DO UPDATE SET is_primary = EXCLUDED.is_primary`,
+      [productId, primaryCategoryId, ids],
+    );
+  },
+
   async replaceCollections(productId, collectionIds, client) {
     const db = runner(client);
     await db.query(`DELETE FROM product_collection WHERE product_id = $1`, [productId]);
@@ -447,6 +469,26 @@ export const productRepository = {
         [productId, collectionId, position],
       );
     }
+  },
+
+  async syncCollections(productId, collectionIds, client) {
+    const db = runner(client);
+    const ids = [...new Set(collectionIds.map(Number).filter(Number.isInteger))];
+    await db.query(
+      `DELETE FROM product_collection
+       WHERE product_id = $1
+         AND NOT (collection_id = ANY($2::bigint[]))`,
+      [productId, ids],
+    );
+    if (!ids.length) return;
+    await db.query(
+      `INSERT INTO product_collection (product_id, collection_id, position_product_collection)
+       SELECT $1, incoming.collection_id, incoming.position - 1
+       FROM unnest($2::bigint[]) WITH ORDINALITY AS incoming(collection_id, position)
+       ON CONFLICT (product_id, collection_id)
+       DO UPDATE SET position_product_collection = EXCLUDED.position_product_collection`,
+      [productId, ids],
+    );
   },
 
   async deleteImagesByProduct(productId, client) {
