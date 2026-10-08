@@ -210,23 +210,23 @@ export const productRepository = {
     const product = existingProduct || (await this.findById(productId, db));
     if (!product) return null;
 
-    const [imagesRes, optionsRes, variantsRes, categoriesRes, collectionsRes] = await Promise.all([
-      db.query(
+    const detailQueries = [
+      () => db.query(
         `SELECT product_image_id, url_product_image, alt_product_image, product_option_value_id, position_product_image
          FROM product_image
          WHERE product_id = $1
-         ORDER BY position_product_image ASC, product_image_id ASC`,
+        ORDER BY position_product_image ASC, product_image_id ASC`,
         [productId],
       ),
-      db.query(
+      () => db.query(
         `SELECT po.product_option_id, po.name_option, pov.product_option_value_id, pov.value_option, pov.is_hidden
          FROM product_option po
          LEFT JOIN product_option_value pov ON pov.product_option_id = po.product_option_id
          WHERE po.product_id = $1
-         ORDER BY po.product_option_id ASC, pov.product_option_value_id ASC`,
+        ORDER BY po.product_option_id ASC, pov.product_option_value_id ASC`,
         [productId],
       ),
-      db.query(
+      () => db.query(
         `SELECT pv.product_variant_id, pv.sku, pv.price, pv.sale_price, pv.sale_start_at, pv.sale_end_at,
                 CASE WHEN pv.sale_price IS NOT NULL AND pv.sale_price < pv.price
                   AND (pv.sale_start_at IS NULL OR pv.sale_start_at <= NOW())
@@ -242,26 +242,38 @@ export const productRepository = {
          LEFT JOIN product_option_value pov ON pov.product_option_value_id = pvov.product_option_value_id
          LEFT JOIN product_option po ON po.product_option_id = pov.product_option_id
          WHERE pv.product_id = $1
-         ORDER BY pv.product_variant_id ASC`,
+        ORDER BY pv.product_variant_id ASC`,
         [productId],
       ),
-      db.query(
+      () => db.query(
         `SELECT c.category_id, c.name_category, pc.is_primary
          FROM product_category pc
          JOIN category c ON c.category_id = pc.category_id
          WHERE pc.product_id = $1
-         ORDER BY pc.is_primary DESC, c.category_id ASC`,
+        ORDER BY pc.is_primary DESC, c.category_id ASC`,
         [productId],
       ),
-      db.query(
+      () => db.query(
         `SELECT col.collection_id, col.parent_collection_id, col.name_collection, pcol.position_product_collection
          FROM product_collection pcol
          JOIN collection col ON col.collection_id = pcol.collection_id
          WHERE pcol.product_id = $1
-         ORDER BY col.collection_id ASC`,
+        ORDER BY col.collection_id ASC`,
         [productId],
       ),
-    ]);
+    ];
+
+    let queryResults;
+    if (client) {
+      queryResults = [];
+      for (const runQuery of detailQueries) {
+        queryResults.push(await runQuery());
+      }
+    } else {
+      queryResults = await Promise.all(detailQueries.map((runQuery) => runQuery()));
+    }
+
+    const [imagesRes, optionsRes, variantsRes, categoriesRes, collectionsRes] = queryResults;
 
     // Aggregate options and values
     const optionsMap = new Map();

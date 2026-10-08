@@ -2,6 +2,26 @@ import { createHmac, randomInt } from "node:crypto";
 import axios from "axios";
 import { AppError } from "../errors/app-error.js";
 
+const getPayOSRequestTimeoutMs = () => {
+  const configured = Number(process.env.PAYOS_REQUEST_TIMEOUT_MS || 10000);
+  if (!Number.isFinite(configured) || configured < 1000 || configured > 120000) {
+    throw new AppError(503, "PAYOS_CONFIG_MISSING", "PAYOS_REQUEST_TIMEOUT_MS phải nằm trong khoảng 1000-120000ms");
+  }
+  return configured;
+};
+
+const appendOrderIdToRedirectUrl = (rawUrl, orderId) => {
+  if (!orderId) return rawUrl;
+
+  try {
+    const url = new URL(rawUrl);
+    url.searchParams.set("orderId", String(orderId));
+    return url.toString();
+  } catch {
+    throw new AppError(503, "PAYOS_CONFIG_MISSING", "PAYOS_RETURN_URL hoặc PAYOS_CANCEL_URL không hợp lệ");
+  }
+};
+
 /**
  * Generate numeric unique orderCode for payOS
  */
@@ -62,6 +82,7 @@ export const callPayOSCreatePaymentLink = async ({
   description,
   cancelUrl,
   returnUrl,
+  orderId,
   items = [],
 }) => {
   const clientId = process.env.PAYOS_CLIENT_ID;
@@ -84,12 +105,20 @@ export const callPayOSCreatePaymentLink = async ({
   }
 
   const cleanDescription = (description || `ORDER${orderCode}`).slice(0, 25);
+  const resolvedCancelUrl = appendOrderIdToRedirectUrl(
+    cancelUrl || process.env.PAYOS_CANCEL_URL,
+    orderId,
+  );
+  const resolvedReturnUrl = appendOrderIdToRedirectUrl(
+    returnUrl || process.env.PAYOS_RETURN_URL,
+    orderId,
+  );
   const dataToSign = {
     amount: Number(amount),
-    cancelUrl: cancelUrl || process.env.PAYOS_CANCEL_URL,
+    cancelUrl: resolvedCancelUrl,
     description: cleanDescription,
     orderCode: Number(orderCode),
-    returnUrl: returnUrl || process.env.PAYOS_RETURN_URL,
+    returnUrl: resolvedReturnUrl,
   };
 
   const signature = createPayOSSignature(dataToSign, checksumKey);
@@ -110,6 +139,7 @@ export const callPayOSCreatePaymentLink = async ({
           "x-api-key": apiKey.trim(),
           "Content-Type": "application/json",
         },
+        timeout: getPayOSRequestTimeoutMs(),
       }
     );
 
@@ -147,11 +177,20 @@ export const getPayOSPaymentLinkInfo = async (orderCodeOrLinkId) => {
           "x-client-id": clientId.trim(),
           "x-api-key": apiKey.trim(),
         },
+        timeout: getPayOSRequestTimeoutMs(),
       }
     );
 
     if (response.data?.code === "00" && response.data?.data) {
-      return response.data.data;
+      const data = response.data.data;
+
+      // PayOS returns `paymentLinkId` when creating a link, but `id` when
+      // reading the link status. Normalize both provider responses to the
+      // same internal field so identity validation remains strict.
+      return {
+        ...data,
+        paymentLinkId: data.paymentLinkId ?? data.id,
+      };
     }
     throw new AppError(502, "PAYOS_PROVIDER_FAILED", "PayOS không trả về trạng thái hợp lệ");
   } catch (err) {

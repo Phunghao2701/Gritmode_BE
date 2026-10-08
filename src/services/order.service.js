@@ -12,6 +12,11 @@ import { emailService } from "./email.service.js";
 import { notificationOutboxService } from "./notification-outbox.service.js";
 import { realtimeBus } from "./realtime-bus.service.js";
 import logger from "../utils/logger.js";
+import {
+  createOrderDetailToken,
+  verifyOrderDetailToken,
+  ORDER_DETAIL_LINK_TTL,
+} from "../utils/order-detail-link.js";
 
 const DEFAULT_SHIPPING_FEE = 0;
 
@@ -329,6 +334,50 @@ export const createOrderService = ({
     },
 
     /**
+     * Get order detail through a signed email link.
+     */
+    async getSharedOrderById(orderId, token) {
+      const access = verifyOrderDetailToken(token);
+      if (!access || access.orderId !== Number(orderId)) {
+        throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
+      }
+
+      const order = await orders.findAdminOrderById(orderId);
+      if (!order || order.order_code !== access.orderCode) {
+        throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
+      }
+      return order;
+    },
+
+    /**
+     * Issue a signed detail link for an authenticated user or verified guest.
+     */
+    async createOrderDetailLink(orderId, userId = null, guestInfo = {}) {
+      let order = userId ? await orders.findUserOrderById(orderId, userId) : null;
+
+      if (!order) {
+        const candidate = await orders.findAdminOrderById(orderId);
+        const guestEmail = String(guestInfo.email || "").trim().toLowerCase();
+        const guestPhone = String(guestInfo.phone || "").trim();
+        const matchesGuest = candidate
+          && guestEmail
+          && guestPhone
+          && String(candidate.email_order || "").trim().toLowerCase() === guestEmail
+          && String(candidate.phone_order || "").trim() === guestPhone;
+
+        if (!matchesGuest) {
+          throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
+        }
+        order = candidate;
+      }
+
+      return {
+        token: createOrderDetailToken(order),
+        expires_in: ORDER_DETAIL_LINK_TTL,
+      };
+    },
+
+    /**
      * Cancel order for authenticated user
      */
     async cancelUserOrder(orderId, userId) {
@@ -345,6 +394,31 @@ export const createOrderService = ({
       }
 
       return transaction(async (client) => {
+        const lockedOrder = await orders.lockOrderById(orderId, client);
+        if (!lockedOrder) {
+          throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
+        }
+
+        const currentOrder = await orders.findUserOrderById(orderId, userId, client);
+        if (!currentOrder) {
+          throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
+        }
+
+        if (!["pending", "confirmed"].includes(currentOrder.status_order)) {
+          throw conflict(
+            "ORDER_CANNOT_BE_CANCELLED",
+            `Không thể hủy đơn hàng đang ở trạng thái ${currentOrder.status_order}`,
+          );
+        }
+
+        const payment = await payments.getOrderPayment(orderId, client);
+        if (payment?.payment_method === "payos" && payment.status_payment === "paid") {
+          throw conflict(
+            "PAID_ORDER_CANNOT_BE_DIRECTLY_CANCELLED",
+            "Đơn hàng đã thanh toán trực tuyến không thể hủy trực tiếp, vui lòng thực hiện quy trình hoàn tiền",
+          );
+        }
+
         // 1. Load items & release inventory reservations
         const items = await orders.findOrderItems(orderId, client);
 
@@ -396,8 +470,33 @@ export const createOrderService = ({
       }
 
       return transaction(async (client) => {
+        const lockedOrder = await orders.lockOrderById(order.order_id, client);
+        if (!lockedOrder) {
+          throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng phù hợp với thông tin xác thực");
+        }
+
+        const currentOrder = await orders.findGuestOrder({ orderCode, email, phone }, client);
+        if (!currentOrder) {
+          throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng phù hợp với thông tin xác thực");
+        }
+
+        if (!["pending", "confirmed"].includes(currentOrder.status_order)) {
+          throw conflict(
+            "ORDER_CANNOT_BE_CANCELLED",
+            `Không thể hủy đơn hàng đang ở trạng thái ${currentOrder.status_order}`,
+          );
+        }
+
+        const payment = await payments.getOrderPayment(currentOrder.order_id, client);
+        if (payment?.payment_method === "payos" && payment.status_payment === "paid") {
+          throw conflict(
+            "PAID_ORDER_CANNOT_BE_DIRECTLY_CANCELLED",
+            "Đơn hàng đã thanh toán trực tuyến không thể hủy trực tiếp, vui lòng thực hiện quy trình hoàn tiền",
+          );
+        }
+
         // 1. Release inventory reservations
-        const items = await orders.findOrderItems(order.order_id, client);
+        const items = await orders.findOrderItems(currentOrder.order_id, client);
 
         for (const item of items) {
           const qty = Number(item.quantity_order_item || item.quantity);
@@ -407,10 +506,10 @@ export const createOrderService = ({
         }
 
         // 2. Cancel pending payment
-        await payments.cancelPendingPaymentByOrderId(order.order_id, client);
+        await payments.cancelPendingPaymentByOrderId(currentOrder.order_id, client);
 
         // 3. Update order status
-        const updated = await orders.updateOrderStatus(order.order_id, "cancelled", client);
+        const updated = await orders.updateOrderStatus(currentOrder.order_id, "cancelled", client);
         return {
           ...updated,
           order_id: Number(updated.order_id),

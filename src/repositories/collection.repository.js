@@ -83,6 +83,19 @@ export const collectionRepository = {
     return rows[0] || null;
   },
 
+  async findByIds(collectionIds = [], client) {
+    const ids = [...new Set(collectionIds.map((collectionId) => Number(collectionId)).filter(Number.isInteger))];
+    if (!ids.length) return [];
+
+    const { rows } = await runner(client).query(
+      `SELECT c.collection_id
+       FROM collection c
+       WHERE c.collection_id = ANY($1::int[])`,
+      [ids],
+    );
+    return rows;
+  },
+
   async findBySlug(slug, client) {
     const query = `
       SELECT 

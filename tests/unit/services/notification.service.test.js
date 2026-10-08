@@ -61,6 +61,35 @@ describe("notification services", () => {
     assert.equal(emailEnqueueCount, 0);
   });
 
+  test("enqueues an allowlisted late PayOS payment review event", async () => {
+    let payload;
+    const service = createNotificationOutboxService({
+      adminNotifications: {
+        create: async (input) => {
+          payload = input;
+          return input;
+        },
+      },
+    });
+
+    await service.enqueuePayOSLatePaymentReview({
+      client: {},
+      order: { order_id: 102, order_code: "ORD-102", email_order: "private@example.com", phone_order: "0901234567" },
+      payment: { payment_id: 202, amount_payment: 500000, payos_transaction_reference: "REF-202" },
+    });
+
+    assert.equal(payload.dedupeKey, "payos-late-settlement:admin:102:202");
+    assert.deepEqual(payload.payload, {
+      order_id: 102,
+      payment_id: 202,
+      amount_payment: 500000,
+      provider_reference: "REF-202",
+      reason: "PAYMENT_RECEIVED_AFTER_ORDER_CANCELLATION",
+    });
+    assert.equal(Object.hasOwn(payload.payload, "email"), false);
+    assert.equal(Object.hasOwn(payload.payload, "phone"), false);
+  });
+
   test("dispatches an outbox email and marks it sent", async () => {
     const calls = [];
     const dispatcher = createNotificationDispatcher({

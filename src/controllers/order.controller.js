@@ -56,6 +56,37 @@ export const createOrderController = ({
   },
 
   /**
+   * GET /api/v1/orders/shared/:orderId
+   */
+  getSharedOrderById: async (req, res, next) => {
+    try {
+      const orderId = req.validatedParams ? req.validatedParams.orderId : req.params.orderId;
+      const result = await orders.getSharedOrderById(orderId, req.query.token);
+      return ok(res, result, { message: "Lấy chi tiết đơn hàng thành công" });
+    } catch (error) {
+      logger.error("[order] getSharedOrderById error:", error);
+      next(error);
+    }
+  },
+
+  /**
+   * POST /api/v1/orders/:orderId/detail-link
+   */
+  createOrderDetailLink: async (req, res, next) => {
+    try {
+      const orderId = req.validatedParams ? req.validatedParams.orderId : req.params.orderId;
+      const result = await orders.createOrderDetailLink(orderId, req.user?.user_id || null, {
+        email: req.get("X-Guest-Email"),
+        phone: req.get("X-Guest-Phone"),
+      });
+      return ok(res, result, { message: "Tạo liên kết chi tiết đơn hàng thành công" });
+    } catch (error) {
+      logger.error("[order] createOrderDetailLink error:", error);
+      next(error);
+    }
+  },
+
+  /**
    * PATCH /api/v1/orders/:orderId/cancel
    */
   cancelMyOrder: async (req, res, next) => {
@@ -104,6 +135,8 @@ export const {
   createOrder,
   getMyOrders,
   getMyOrderById,
+  getSharedOrderById,
+  createOrderDetailLink,
   cancelMyOrder,
   lookupGuestOrder,
   cancelGuestOrder,
