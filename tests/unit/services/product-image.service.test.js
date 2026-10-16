@@ -107,6 +107,150 @@ describe("product image service", () => {
     assert.equal(updatedAudit, true);
   });
 
+  test("updateProductImage attaches the new cropped media asset", async () => {
+    let attached = null;
+    let updatedPayload = null;
+    let cleanedPublicId = null;
+    const existingImage = {
+      product_image_id: 1,
+      product_id: 100,
+      cloudinary_public_id: "products/old-crop",
+    };
+    const asset = {
+      media_asset_id: 55,
+      asset_type: "product",
+      status: "staged",
+      url: "https://cdn.example/new-crop.webp",
+      cloudinary_public_id: "products/new-crop",
+      cloudinary_source_public_id: "products/source",
+      cloudinary_source_url: "https://cdn.example/source.jpg",
+      crop_profile: "product",
+      image_width: 1200,
+      image_height: 1600,
+      image_format: "webp",
+    };
+
+    const service = createProductImageService({
+      images: {
+        findById: async () => existingImage,
+        update: async (id, data) => {
+          updatedPayload = { id, data };
+          return { ...existingImage, ...data };
+        },
+      },
+      mediaAssets: {
+        findById: async () => asset,
+        attach: async (assetId, entityType, entityId) => {
+          attached = { assetId, entityType, entityId };
+          return true;
+        },
+      },
+      mediaLifecycle: {
+        cleanupAfterCommit: async (publicId) => { cleanedPublicId = publicId; },
+      },
+      audits: { record: async () => {} },
+      transaction,
+    });
+
+    const updated = await service.updateProductImage(1, { media_asset_id: 55 }, "admin-id");
+
+    assert.equal(updated.url_product_image, asset.url);
+    assert.equal(updatedPayload.data.cloudinary_public_id, asset.cloudinary_public_id);
+    assert.deepEqual(attached, { assetId: 55, entityType: "product_image", entityId: 1 });
+    assert.equal(cleanedPublicId, "products/old-crop");
+  });
+
+  test("cropProductImage reuses the retained source and cleans the old derivative asynchronously", async () => {
+    const uploadCalls = [];
+    const destroyed = [];
+    const attached = [];
+    const existingImage = {
+      product_image_id: 1,
+      product_id: 100,
+      cloudinary_public_id: "products/old-crop",
+      cloudinary_source_public_id: "products/source-master",
+      cloudinary_source_url: "https://cdn.example/source.webp",
+    };
+    const descriptor = {
+      url: "https://cdn.example/new-crop.webp",
+      cloudinary_public_id: "products/new-crop",
+      cloudinary_source_public_id: "products/source-master",
+      cloudinary_source_url: "https://cdn.example/source.webp",
+      crop_profile: "product",
+      image_width: 1200,
+      image_height: 1600,
+      image_format: "webp",
+    };
+
+    const service = createProductImageService({
+      images: {
+        findById: async () => existingImage,
+        update: async (_id, data) => ({ ...existingImage, ...data }),
+      },
+      mediaAssets: {
+        create: async (data) => ({ media_asset_id: 77, ...data }),
+        attach: async (assetId, recordType, recordId) => {
+          attached.push({ assetId, recordType, recordId });
+          return true;
+        },
+      },
+      cloudinary: {
+        upload: async (data) => {
+          uploadCalls.push(data);
+          return descriptor;
+        },
+        destroy: async (publicId) => destroyed.push(publicId),
+      },
+      mediaLifecycle: {
+        cleanupAfterCommit: async (publicId) => destroyed.push(publicId),
+      },
+      audits: { record: async () => {} },
+      transaction,
+    });
+
+    const updated = await service.cropProductImage(1, { buffer: Buffer.from("image"), originalName: "crop.png" }, "admin-id");
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(updated.url_product_image, descriptor.url);
+    assert.equal(uploadCalls[0].sourcePublicId, "products/source-master");
+    assert.deepEqual(attached, [{ assetId: 77, recordType: "product_image", recordId: 1 }]);
+    assert.deepEqual(destroyed, ["products/old-crop"]);
+  });
+
+  test("cropProductImage never destroys a retained source when the DB transaction fails", async () => {
+    const destroyed = [];
+    const service = createProductImageService({
+      images: {
+        findById: async () => ({
+          product_image_id: 1,
+          product_id: 100,
+          cloudinary_public_id: "products/old-crop",
+          cloudinary_source_public_id: "products/source-master",
+        }),
+        update: async () => { throw new Error("db failed"); },
+      },
+      mediaAssets: {
+        create: async () => ({ media_asset_id: 77 }),
+        attach: async () => true,
+      },
+      cloudinary: {
+        upload: async () => ({
+          url: "https://cdn.example/new-crop.webp",
+          cloudinary_public_id: "products/new-crop",
+          cloudinary_source_public_id: "products/source-master",
+        }),
+        destroy: async (publicId) => destroyed.push(publicId),
+      },
+      transaction,
+    });
+
+    await assert.rejects(
+      service.cropProductImage(1, { buffer: Buffer.from("image") }),
+      /db failed/,
+    );
+    assert.deepEqual(destroyed, ["products/new-crop"]);
+  });
+
   test("deleteProductImage deletes image and writes audit log", async () => {
     let deletedAudit = false;
     const service = createProductImageService({

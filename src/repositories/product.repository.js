@@ -221,7 +221,7 @@ export const productRepository = {
 
     const detailQueries = [
       () => db.query(
-        `SELECT product_image_id, url_product_image, alt_product_image, product_option_value_id, position_product_image
+        `SELECT product_image_id, url_product_image, alt_product_image, product_option_value_id, position_product_image, cloudinary_public_id, cloudinary_source_public_id, cloudinary_source_url, crop_profile, image_width, image_height, image_format
          FROM product_image
          WHERE product_id = $1
         ORDER BY position_product_image ASC, product_image_id ASC`,
@@ -349,6 +349,13 @@ export const productRepository = {
         alt_product_image: img.alt_product_image,
         product_option_value_id: img.product_option_value_id ? Number(img.product_option_value_id) : null,
         position_product_image: Number(img.position_product_image),
+        cloudinary_public_id: img.cloudinary_public_id,
+        cloudinary_source_public_id: img.cloudinary_source_public_id,
+        cloudinary_source_url: img.cloudinary_source_url,
+        crop_profile: img.crop_profile,
+        image_width: img.image_width ? Number(img.image_width) : null,
+        image_height: img.image_height ? Number(img.image_height) : null,
+        image_format: img.image_format,
       })),
       options: Array.from(optionsMap.values()),
       variants: Array.from(variantsMap.values()),

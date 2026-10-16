@@ -1,19 +1,18 @@
 import { Router } from "express";
 import multer from "multer";
 import sharp from "sharp";
-import { v2 as cloudinary } from "cloudinary";
 import { requireAuth, requireRole } from "../middlewares/auth.middleware.js";
 import { ok } from "../utils/api-response.js";
+import { getImageProfile } from "../utils/image-profiles.js";
+import { withTransaction } from "../config/database.js";
+import { cloudinaryAssetService } from "../services/cloudinary-asset.service.js";
+import { mediaAssetService } from "../services/media-asset.service.js";
+import { mediaAssetRepository } from "../repositories/media-asset.repository.js";
+import { badRequest } from "../errors/app-error.js";
 
 const MAX_IMAGE_DIMENSION = 2000;
 const WEBP_QUALITY = 85;
 const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -27,30 +26,33 @@ export const optimizeProductImage = (buffer) => sharp(buffer)
   .webp({ quality: 80, effort: 2 })
   .toBuffer();
 
-const uploadToCloudinary = (buffer) => new Promise((resolve, reject) => {
-  const stream = cloudinary.uploader.upload_stream(
-    { folder: "gritmode/products", resource_type: "image" },
-    (error, result) => error ? reject(error) : resolve(result),
-  );
-  stream.end(buffer);
-});
-
 const router = Router();
 router.use(requireAuth, requireRole("admin"));
 router.post("/product-images", upload.array("images", 20), async (req, res) => {
   const files = req.files || [];
-  const images = await Promise.all(
-    files.map(async (file) => {
-      const optimized = await optimizeProductImage(file.buffer);
-      const result = await uploadToCloudinary(optimized);
-      return {
-        url: result.secure_url,
-        public_id: result.public_id,
-        original_name: file.originalname,
-        size: result.bytes,
-      };
-    })
-  );
+  const profile = String(req.body?.profile || "").trim();
+  try {
+    getImageProfile(profile);
+  } catch {
+    throw badRequest("INVALID_IMAGE_PROFILE", "Image profile không hợp lệ");
+  }
+  const descriptors = [];
+  const images = [];
+  try {
+    for (const file of files) {
+      const descriptor = await cloudinaryAssetService.upload({ buffer: file.buffer, profile, originalName: file.originalname });
+      descriptors.push(descriptor);
+      const asset = await withTransaction((client) => mediaAssetRepository.create({ ...descriptor, asset_type: profile }, client));
+      images.push({ ...descriptor, media_asset_id: asset.media_asset_id });
+    }
+  } catch (error) {
+    await Promise.all(descriptors.map(async (descriptor) => {
+      await mediaAssetService.compensateUpload(descriptor).catch(() => {});
+      const asset = await mediaAssetRepository.findByPublicId(descriptor.cloudinary_public_id).catch(() => null);
+      if (asset) await mediaAssetRepository.markDeleted(descriptor.cloudinary_public_id).catch(() => {});
+    }));
+    throw error;
+  }
   return ok(res, images, { status: 201, code: "PRODUCT_IMAGES_UPLOADED", message: "Tải ảnh sản phẩm thành công" });
 });
 

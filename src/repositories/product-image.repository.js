@@ -12,6 +12,13 @@ export const productImageRepository = {
         pi.url_product_image,
         pi.alt_product_image,
         pi.position_product_image,
+        pi.cloudinary_public_id,
+        pi.cloudinary_source_public_id,
+        pi.cloudinary_source_url,
+        pi.crop_profile,
+        pi.image_width,
+        pi.image_height,
+        pi.image_format,
         pi.created_at,
         pi.updated_at,
         po.name_option,
@@ -35,6 +42,13 @@ export const productImageRepository = {
         pi.url_product_image,
         pi.alt_product_image,
         pi.position_product_image,
+        pi.cloudinary_public_id,
+        pi.cloudinary_source_public_id,
+        pi.cloudinary_source_url,
+        pi.crop_profile,
+        pi.image_width,
+        pi.image_height,
+        pi.image_format,
         pi.created_at,
         pi.updated_at,
         po.name_option,
@@ -50,12 +64,12 @@ export const productImageRepository = {
 
   async getMaxPosition(productId, client) {
     const query = `
-      SELECT COALESCE(MAX(position_product_image), 0) AS max_position
+      SELECT COALESCE(MAX(position_product_image), -1) AS max_position
       FROM product_image
       WHERE product_id = $1
     `;
     const { rows } = await runner(client).query(query, [productId]);
-    return Number.parseInt(rows[0]?.max_position || "0", 10);
+    return Number.parseInt(rows[0]?.max_position ?? "-1", 10);
   },
 
   async create(productId, data, client) {
@@ -66,10 +80,17 @@ export const productImageRepository = {
         url_product_image,
         alt_product_image,
         position_product_image,
+        cloudinary_public_id,
+        cloudinary_source_public_id,
+        cloudinary_source_url,
+        crop_profile,
+        image_width,
+        image_height,
+        image_format,
         created_at,
         updated_at
-      ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-      RETURNING product_image_id, product_id, product_option_value_id, url_product_image, alt_product_image, position_product_image, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+      RETURNING product_image_id, product_id, product_option_value_id, url_product_image, alt_product_image, position_product_image, cloudinary_public_id, cloudinary_source_public_id, cloudinary_source_url, crop_profile, image_width, image_height, image_format, created_at, updated_at
     `;
     const { rows } = await runner(client).query(query, [
       productId,
@@ -77,6 +98,13 @@ export const productImageRepository = {
       data.url_product_image,
       data.alt_product_image || null,
       data.position_product_image !== undefined ? data.position_product_image : 0,
+      data.cloudinary_public_id || null,
+      data.cloudinary_source_public_id || null,
+      data.cloudinary_source_url || null,
+      data.crop_profile || null,
+      data.image_width || null,
+      data.image_height || null,
+      data.image_format || null,
     ]);
     return rows[0];
   },
@@ -102,6 +130,12 @@ export const productImageRepository = {
       sets.push(`position_product_image = $${idx++}`);
       values.push(data.position_product_image);
     }
+    for (const field of ["cloudinary_public_id", "cloudinary_source_public_id", "cloudinary_source_url", "crop_profile", "image_width", "image_height", "image_format"]) {
+      if (data[field] !== undefined) {
+        sets.push(`${field} = $${idx++}`);
+        values.push(data[field]);
+      }
+    }
 
     sets.push(`updated_at = NOW()`);
     values.push(imageId);
@@ -110,7 +144,7 @@ export const productImageRepository = {
       UPDATE product_image
       SET ${sets.join(", ")}
       WHERE product_image_id = $${idx}
-      RETURNING product_image_id, product_id, product_option_value_id, url_product_image, alt_product_image, position_product_image, created_at, updated_at
+      RETURNING product_image_id, product_id, product_option_value_id, url_product_image, alt_product_image, position_product_image, cloudinary_public_id, cloudinary_source_public_id, cloudinary_source_url, crop_profile, image_width, image_height, image_format, created_at, updated_at
     `;
     const { rows } = await runner(client).query(query, values);
     return rows[0] || null;
