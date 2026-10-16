@@ -8,6 +8,8 @@ import { productImageRepository } from "../repositories/product-image.repository
 import { categoryRepository } from "../repositories/category.repository.js";
 import { collectionRepository } from "../repositories/collection.repository.js";
 import { inventoryRepository } from "../repositories/inventory.repository.js";
+import { mediaAssetRepository } from "../repositories/media-asset.repository.js";
+import { mediaAssetService } from "./media-asset.service.js";
 import { PRODUCT_STATUS } from "../constants/product.js";
 
 const normalizeOptionValueInput = (rawValue) => {
@@ -98,6 +100,8 @@ export const createProductService = ({
   categories = categoryRepository,
   collections = collectionRepository,
   inventories = inventoryRepository,
+  mediaAssets = mediaAssetRepository,
+  mediaLifecycle = mediaAssetService,
 } = {}) => ({
   async getProducts(query = {}) {
     const page = query.page || 1;
@@ -298,11 +302,31 @@ export const createProductService = ({
         const optionValueId = imageInput.option_value
           ? valueIdByReference.get(`${imageInput.option_value.option_name.toLowerCase()}\u0000${imageInput.option_value.value.toLowerCase()}`)
           : null;
-        createdImages.push(await images.create(
+        const asset = imageInput.media_asset_id ? await mediaAssets.findById(imageInput.media_asset_id, client) : null;
+        if (imageInput.media_asset_id && (!asset || asset.status === "deleted" || asset.asset_type !== "product")) {
+          throw conflict("INVALID_MEDIA_ASSET", "Media asset không hợp lệ cho sản phẩm");
+        }
+        const imageData = asset ? {
+          ...imageInput,
+          url_product_image: asset.url,
+          cloudinary_public_id: asset.cloudinary_public_id,
+          cloudinary_source_public_id: asset.cloudinary_source_public_id,
+          cloudinary_source_url: asset.cloudinary_source_url,
+          crop_profile: asset.crop_profile,
+          image_width: asset.image_width,
+          image_height: asset.image_height,
+          image_format: asset.image_format,
+        } : imageInput;
+        const createdImage = await images.create(
           product.product_id,
-          { ...imageInput, product_option_value_id: optionValueId },
+          { ...imageData, product_option_value_id: optionValueId },
           client,
-        ));
+        );
+        if (asset) {
+          const attached = await mediaAssets.attach(asset.media_asset_id, "product_image", createdImage.product_image_id, client);
+          if (!attached) throw conflict("MEDIA_ASSET_ATTACH_FAILED", "Không thể gắn media asset vào ảnh sản phẩm");
+        }
+        createdImages.push(createdImage);
       }
 
       const createdCategories = [];
@@ -354,7 +378,8 @@ export const createProductService = ({
   },
 
   async updateFullProduct(productId, input, adminUserId) {
-    return transaction(async (client) => {
+    const cleanupPublicIds = [];
+    const updatedProduct = await transaction(async (client) => {
       const existing = await products.findDetail(productId, client);
       if (!existing) throw notFound("PRODUCT_NOT_FOUND", "Không tìm thấy sản phẩm");
 
@@ -567,7 +592,25 @@ export const createProductService = ({
           }
           retainedImageIds.add(imageId);
           const imagePatch = {};
-          if (existingImage.url_product_image !== imageInput.url_product_image) imagePatch.url_product_image = imageInput.url_product_image;
+          if (existingImage.url_product_image !== imageInput.url_product_image) {
+            imagePatch.url_product_image = imageInput.url_product_image;
+            if (existingImage.cloudinary_public_id) cleanupPublicIds.push(existingImage.cloudinary_public_id);
+          }
+          const asset = imageInput.media_asset_id ? await mediaAssets.findById(imageInput.media_asset_id, client) : null;
+          if (imageInput.media_asset_id && (!asset || asset.status === "deleted" || asset.asset_type !== "product")) {
+            throw conflict("INVALID_MEDIA_ASSET", "Media asset không hợp lệ cho sản phẩm");
+          }
+          if (asset) {
+            if (existingImage.cloudinary_public_id && existingImage.cloudinary_public_id !== asset.cloudinary_public_id) cleanupPublicIds.push(existingImage.cloudinary_public_id);
+            imagePatch.url_product_image = asset.url;
+            imagePatch.cloudinary_public_id = asset.cloudinary_public_id;
+            imagePatch.cloudinary_source_public_id = asset.cloudinary_source_public_id;
+            imagePatch.cloudinary_source_url = asset.cloudinary_source_url;
+            imagePatch.crop_profile = asset.crop_profile;
+            imagePatch.image_width = asset.image_width;
+            imagePatch.image_height = asset.image_height;
+            imagePatch.image_format = asset.image_format;
+          }
           const currentOptionValueId = existingImage.product_option_value_id ?? null;
           if (Number(currentOptionValueId || 0) !== Number(optionValueId ?? currentOptionValueId ?? 0)) {
             imagePatch.product_option_value_id = optionValueId;
@@ -575,10 +618,33 @@ export const createProductService = ({
           if (Number(existingImage.position_product_image) !== Number(position)) imagePatch.position_product_image = position;
           if (Object.keys(imagePatch).length > 0) {
             await images.update(imageId, imagePatch, client);
+            if (asset) {
+              const attached = await mediaAssets.attach(asset.media_asset_id, "product_image", imageId, client);
+              if (!attached) throw conflict("MEDIA_ASSET_ATTACH_FAILED", "Không thể gắn media asset vào ảnh sản phẩm");
+            }
             imagesChanged = true;
           }
         } else {
-          await images.create(productId, { ...imageInput, product_option_value_id: optionValueId, position_product_image: position }, client);
+          const asset = imageInput.media_asset_id ? await mediaAssets.findById(imageInput.media_asset_id, client) : null;
+          if (imageInput.media_asset_id && (!asset || asset.status === "deleted" || asset.asset_type !== "product")) {
+            throw conflict("INVALID_MEDIA_ASSET", "Media asset không hợp lệ cho sản phẩm");
+          }
+          const imageData = asset ? {
+            ...imageInput,
+            url_product_image: asset.url,
+            cloudinary_public_id: asset.cloudinary_public_id,
+            cloudinary_source_public_id: asset.cloudinary_source_public_id,
+            cloudinary_source_url: asset.cloudinary_source_url,
+            crop_profile: asset.crop_profile,
+            image_width: asset.image_width,
+            image_height: asset.image_height,
+            image_format: asset.image_format,
+          } : imageInput;
+          const createdImage = await images.create(productId, { ...imageData, product_option_value_id: optionValueId, position_product_image: position }, client);
+          if (asset) {
+            const attached = await mediaAssets.attach(asset.media_asset_id, "product_image", createdImage.product_image_id, client);
+            if (!attached) throw conflict("MEDIA_ASSET_ATTACH_FAILED", "Không thể gắn media asset vào ảnh sản phẩm");
+          }
           imagesChanged = true;
         }
       }
@@ -586,6 +652,7 @@ export const createProductService = ({
       for (const existingImage of existingImages) {
         const imageId = Number(existingImage.product_image_id);
         if (retainedImageIds.has(imageId)) continue;
+        if (existingImage.cloudinary_public_id) cleanupPublicIds.push(existingImage.cloudinary_public_id);
         await images.delete(imageId, client);
         imagesChanged = true;
       }
@@ -624,6 +691,8 @@ export const createProductService = ({
       }
       return updated;
     });
+    for (const publicId of [...new Set(cleanupPublicIds)]) await mediaLifecycle.cleanupAfterCommit(publicId);
+    return updatedProduct;
   },
 
   async deleteProduct(productId, adminUserId) {

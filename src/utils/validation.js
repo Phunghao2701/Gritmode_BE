@@ -1050,6 +1050,13 @@ export const validateCreateProductImage = (input = {}) => {
         }
     }
 
+    let mediaAssetId = null;
+    if (input.media_asset_id !== undefined && input.media_asset_id !== null && input.media_asset_id !== '') {
+        const parsed = Number(input.media_asset_id);
+        if (!Number.isSafeInteger(parsed) || parsed <= 0) errors.push({ field: 'media_asset_id', message: 'media_asset_id pháº£i lÃ  sá»‘ nguyÃªn dÆ°Æ¡ng' });
+        else mediaAssetId = parsed;
+    }
+
     if (errors.length) return { ok: false, errors };
 
     return {
@@ -1059,6 +1066,7 @@ export const validateCreateProductImage = (input = {}) => {
             product_option_value_id: optionValueId,
             alt_product_image: alt,
             position_product_image: position,
+            media_asset_id: mediaAssetId,
         },
     };
 };
@@ -1073,6 +1081,11 @@ export const validateUpdateProductImage = (input = {}) => {
     }
 
     const value = {};
+    if (input.media_asset_id !== undefined) {
+        const parsed = Number(input.media_asset_id);
+        if (!Number.isSafeInteger(parsed) || parsed <= 0) errors.push({ field: 'media_asset_id', message: 'media_asset_id pháº£i lÃ  sá»‘ nguyÃªn dÆ°Æ¡ng' });
+        else value.media_asset_id = parsed;
+    }
     if (input.url_product_image !== undefined) {
         if (!requiredString(input.url_product_image, 1, 1000) || /^javascript:/i.test(input.url_product_image.trim())) {
             errors.push({ field: 'url_product_image', message: 'URL hình ảnh phải từ 1 đến 1000 ký tự và hợp lệ' });
@@ -1456,6 +1469,13 @@ export const validateCreateCollection = (input = {}) => {
         }
     }
 
+    let mediaAssetId = null;
+    if (input.media_asset_id !== undefined && input.media_asset_id !== null && input.media_asset_id !== '') {
+        const id = Number(input.media_asset_id);
+        if (!Number.isSafeInteger(id) || id <= 0) errors.push({ field: 'media_asset_id', message: 'media_asset_id pháº£i lÃ  sá»‘ nguyÃªn dÆ°Æ¡ng' });
+        else mediaAssetId = id;
+    }
+
     let position = 0;
     if (input.position_collection !== undefined && input.position_collection !== null) {
         const numPos = Number(input.position_collection);
@@ -1509,6 +1529,7 @@ export const validateCreateCollection = (input = {}) => {
             slug_collection: slug,
             description_collection: description,
             image_collection: image,
+            media_asset_id: mediaAssetId,
             position_collection: position,
             is_active: isActive,
             start_at: startAt,
@@ -1574,6 +1595,11 @@ export const validateUpdateCollection = (input = {}) => {
         } else {
             value.image_collection = input.image_collection.trim();
         }
+    }
+    if (input.media_asset_id !== undefined) {
+        const id = Number(input.media_asset_id);
+        if (!Number.isSafeInteger(id) || id <= 0) errors.push({ field: 'media_asset_id', message: 'media_asset_id pháº£i lÃ  sá»‘ nguyÃªn dÆ°Æ¡ng' });
+        else value.media_asset_id = id;
     }
 
     if (input.position_collection !== undefined) {

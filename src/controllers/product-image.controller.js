@@ -1,6 +1,7 @@
 import { validatePositiveId } from "../utils/validation.js";
 import { ok } from "../utils/api-response.js";
 import * as productImageService from "../services/product-image.service.js";
+import { invalidateProductCache } from "./product.controller.js";
 
 export const createProductImageController = ({
   service = productImageService,
@@ -19,6 +20,7 @@ export const createProductImageController = ({
     try {
       const productId = validatePositiveId(req.params.productId);
       const data = await service.createProductImage(productId, req.validatedBody || req.body, req.user?.user_id);
+      void invalidateProductCache().catch(() => {});
       return ok(res, data, { status: 201, code: "IMAGE_CREATED" });
     } catch (e) {
       next(e);
@@ -29,7 +31,22 @@ export const createProductImageController = ({
     try {
       const imageId = validatePositiveId(req.params.imageId);
       const data = await service.updateProductImage(imageId, req.validatedBody || req.body, req.user?.user_id);
+      void invalidateProductCache().catch(() => {});
       return ok(res, data, { code: "IMAGE_UPDATED" });
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  cropProductImage: async (req, res, next) => {
+    try {
+      const imageId = validatePositiveId(req.params.imageId);
+      const data = await service.cropProductImage(imageId, {
+        buffer: req.file?.buffer,
+        originalName: req.file?.originalname,
+      }, req.user?.user_id);
+      void invalidateProductCache().catch(() => {});
+      return ok(res, data, { code: "IMAGE_CROPPED" });
     } catch (e) {
       next(e);
     }
@@ -39,6 +56,7 @@ export const createProductImageController = ({
     try {
       const imageId = validatePositiveId(req.params.imageId);
       await service.deleteProductImage(imageId, req.user?.user_id);
+      void invalidateProductCache().catch(() => {});
       return ok(res, null, { code: "IMAGE_DELETED" });
     } catch (e) {
       next(e);
@@ -50,6 +68,7 @@ export const createProductImageController = ({
       const productId = validatePositiveId(req.params.productId);
       const images = (req.validatedBody || req.body).images;
       const data = await service.reorderProductImages(productId, images, req.user?.user_id);
+      void invalidateProductCache().catch(() => {});
       return ok(res, data, { code: "IMAGES_REORDERED" });
     } catch (e) {
       next(e);
@@ -63,6 +82,7 @@ export const {
   getProductImages,
   createProductImage,
   updateProductImage,
+  cropProductImage,
   deleteProductImage,
   reorderProductImages,
 } = defaultProductImageController;

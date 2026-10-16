@@ -7,6 +7,8 @@ import { slugify } from "../utils/validation.js";
 import { getProducts } from "./product.service.js";
 import { redisService } from "./redis.service.js";
 import logger from "../utils/logger.js";
+import { mediaAssetRepository } from "../repositories/media-asset.repository.js";
+import { mediaAssetService } from "./media-asset.service.js";
 
 export const isCollectionVisible = (collection, now = new Date()) => {
   if (!collection) return false;
@@ -43,6 +45,8 @@ export const createCollectionService = ({
   audits = auditRepository,
   transaction = withTransaction,
   productListing = getProducts,
+  mediaAssets = mediaAssetRepository,
+  mediaLifecycle = mediaAssetService,
 } = {}) => ({
   async getCollections() {
     const { data } = await redisService.getOrSet("collections:list:visible:v2", async () => {
@@ -54,6 +58,13 @@ export const createCollectionService = ({
         slug_collection: item.slug_collection,
         description_collection: item.description_collection,
         image_collection: item.image_collection,
+        cloudinary_public_id: item.cloudinary_public_id,
+        cloudinary_source_public_id: item.cloudinary_source_public_id,
+        cloudinary_source_url: item.cloudinary_source_url,
+        crop_profile: item.crop_profile,
+        image_width: item.image_width,
+        image_height: item.image_height,
+        image_format: item.image_format,
         position_collection: item.position_collection,
         start_at: item.start_at,
         end_at: item.end_at,
@@ -96,6 +107,13 @@ export const createCollectionService = ({
       slug_collection: collection.slug_collection,
       description_collection: collection.description_collection,
       image_collection: collection.image_collection,
+      cloudinary_public_id: collection.cloudinary_public_id,
+      cloudinary_source_public_id: collection.cloudinary_source_public_id,
+      cloudinary_source_url: collection.cloudinary_source_url,
+      crop_profile: collection.crop_profile,
+      image_width: collection.image_width,
+      image_height: collection.image_height,
+      image_format: collection.image_format,
       position_collection: collection.position_collection,
       start_at: collection.start_at,
       end_at: collection.end_at,
@@ -133,10 +151,20 @@ export const createCollectionService = ({
     }
 
     const created = await transaction(async (client) => {
+      let mediaData = data;
+      if (data.media_asset_id) {
+        const asset = await mediaAssets.findById(data.media_asset_id, client);
+        if (!asset || asset.status === "deleted" || asset.asset_type !== "collection") throw badRequest("INVALID_MEDIA_ASSET", "Media asset không hợp lệ cho bộ sưu tập");
+        mediaData = { ...data, image_collection: asset.url, cloudinary_public_id: asset.cloudinary_public_id, cloudinary_source_public_id: asset.cloudinary_source_public_id, cloudinary_source_url: asset.cloudinary_source_url, crop_profile: asset.crop_profile, image_width: asset.image_width, image_height: asset.image_height, image_format: asset.image_format };
+      }
       const created = await collections.create({
-        ...data,
+        ...mediaData,
         slug_collection: slug,
       }, client);
+      if (data.media_asset_id) {
+        const attached = await mediaAssets.attach(data.media_asset_id, "collection", created.collection_id, client);
+        if (!attached) throw badRequest("MEDIA_ASSET_ATTACH_FAILED", "Không thể gắn media asset vào bộ sưu tập");
+      }
 
       if (audits?.record) {
         await audits.record({
@@ -177,11 +205,21 @@ export const createCollectionService = ({
     }
 
     const updated = await transaction(async (client) => {
+      let mediaData = data;
+      if (data.media_asset_id) {
+        const asset = await mediaAssets.findById(data.media_asset_id, client);
+        if (!asset || asset.status === "deleted" || asset.asset_type !== "collection") throw badRequest("INVALID_MEDIA_ASSET", "Media asset không hợp lệ cho bộ sưu tập");
+        mediaData = { ...data, image_collection: asset.url, cloudinary_public_id: asset.cloudinary_public_id, cloudinary_source_public_id: asset.cloudinary_source_public_id, cloudinary_source_url: asset.cloudinary_source_url, crop_profile: asset.crop_profile, image_width: asset.image_width, image_height: asset.image_height, image_format: asset.image_format };
+      }
       const payload = {
-        ...data,
+        ...mediaData,
         ...(slug ? { slug_collection: slug } : {}),
       };
       const updated = await collections.update(collectionId, payload, client);
+      if (data.media_asset_id) {
+        const attached = await mediaAssets.attach(data.media_asset_id, "collection", collectionId, client);
+        if (!attached) throw badRequest("MEDIA_ASSET_ATTACH_FAILED", "Không thể gắn media asset vào bộ sưu tập");
+      }
 
       if (audits?.record) {
         await audits.record({
@@ -196,6 +234,7 @@ export const createCollectionService = ({
 
       return updated;
     });
+    if (data.media_asset_id && existing.cloudinary_public_id) await mediaLifecycle.cleanupAfterCommit(existing.cloudinary_public_id);
     await invalidateCollectionCaches();
     return updated;
   },
@@ -223,6 +262,7 @@ export const createCollectionService = ({
       }
 
     });
+    if (existing.cloudinary_public_id) await mediaLifecycle.cleanupAfterCommit(existing.cloudinary_public_id);
     await invalidateCollectionCaches();
   },
 

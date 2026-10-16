@@ -50,7 +50,20 @@ describe("product repository", () => {
       // findDetail product base
       { rows: [{ product_id: 1, name_product: "Shirt", description: "Desc", created_at: new Date(), updated_at: new Date() }] },
       // images
-      { rows: [{ product_image_id: 10, url_product_image: "url1", product_option_value_id: null, position_product_image: 1 }] },
+      {
+        rows: [{
+          product_image_id: 10,
+          url_product_image: "url1",
+          product_option_value_id: null,
+          position_product_image: 1,
+          cloudinary_public_id: "products/cropped-10",
+          cloudinary_source_public_id: "products/source-10",
+          cloudinary_source_url: "https://source.example/image.jpg",
+          crop_profile: "product",
+          image_width: 1200,
+          image_height: 1600,
+          image_format: "webp",
+        }] },
       // options
       { rows: [{ product_option_id: 20, name_option: "Color", product_option_value_id: 30, value_option: "Black" }] },
       // variants
@@ -80,6 +93,9 @@ describe("product repository", () => {
     const detail = await productRepository.findDetail(1);
     assert.equal(detail.product_id, 1);
     assert.equal(detail.images.length, 1);
+    assert.equal(detail.images[0].cloudinary_source_url, "https://source.example/image.jpg");
+    assert.equal(detail.images[0].image_width, 1200);
+    assert.equal(detail.images[0].image_height, 1600);
     assert.equal(detail.options[0].values[0].value_option, "Black");
     assert.equal(detail.variants[0].sku, "SKU-BLK");
     assert.equal(detail.variants[0].option_values[0].value_option, "Black");

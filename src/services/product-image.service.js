@@ -4,12 +4,52 @@ import { productOptionRepository } from "../repositories/product-option.reposito
 import { productImageRepository } from "../repositories/product-image.repository.js";
 import { auditRepository } from "../repositories/audit.repository.js";
 import { withTransaction } from "../config/database.js";
+import { mediaAssetRepository } from "../repositories/media-asset.repository.js";
+import { mediaAssetService } from "./media-asset.service.js";
+import { cloudinaryAssetService } from "./cloudinary-asset.service.js";
+
+const scheduleCleanup = (mediaLifecycle, publicId) => {
+  if (!publicId) return;
+  void Promise.resolve()
+    .then(() => mediaLifecycle.cleanupAfterCommit(publicId))
+    .catch((error) => console.warn("[product-image] background cleanup failed:", error?.message || error));
+};
+
+const compensateRecropUpload = async (cloudinary, descriptor, sourcePublicId) => {
+  const publicIds = [descriptor?.cloudinary_public_id];
+  if (!sourcePublicId && descriptor?.cloudinary_source_public_id && descriptor.cloudinary_source_public_id !== descriptor.cloudinary_public_id) {
+    publicIds.push(descriptor.cloudinary_source_public_id);
+  }
+  await Promise.all(publicIds.filter(Boolean).map((publicId) => cloudinary.destroy(publicId).catch(() => {})));
+};
+
+const resolveMediaAsset = async (data, assetType, mediaAssets, client) => {
+  if (!data?.media_asset_id) return data;
+  const asset = await mediaAssets.findById(data.media_asset_id, client);
+  if (!asset || asset.status === "deleted" || asset.asset_type !== assetType) {
+    throw badRequest("INVALID_MEDIA_ASSET", "Media asset không hợp lệ hoặc không thuộc ngữ cảnh này");
+  }
+  return {
+    ...data,
+    url_product_image: asset.url,
+    cloudinary_public_id: asset.cloudinary_public_id,
+    cloudinary_source_public_id: asset.cloudinary_source_public_id,
+    cloudinary_source_url: asset.cloudinary_source_url,
+    crop_profile: asset.crop_profile,
+    image_width: asset.image_width,
+    image_height: asset.image_height,
+    image_format: asset.image_format,
+  };
+};
 
 export const createProductImageService = ({
   products = productRepository,
   options = productOptionRepository,
   images = productImageRepository,
   audits = auditRepository,
+  mediaAssets = mediaAssetRepository,
+  mediaLifecycle = mediaAssetService,
+  cloudinary = cloudinaryAssetService,
   transaction = withTransaction,
 } = {}) => ({
   async getProductImages(productId) {
@@ -36,7 +76,12 @@ export const createProductImageService = ({
     }
 
     return transaction(async (client) => {
-      const created = await images.create(productId, { ...data, position_product_image: position }, client);
+      const mediaData = await resolveMediaAsset(data, "product", mediaAssets, client);
+      const created = await images.create(productId, { ...mediaData, position_product_image: position }, client);
+      if (mediaData.media_asset_id) {
+        const attached = await mediaAssets.attach(mediaData.media_asset_id, "product_image", created.product_image_id, client);
+        if (!attached) throw badRequest("MEDIA_ASSET_ATTACH_FAILED", "Không thể gắn media asset vào ảnh sản phẩm");
+      }
       if (audits?.record) {
         await audits.record({
           userId,
@@ -61,8 +106,13 @@ export const createProductImageService = ({
       }
     }
 
-    return transaction(async (client) => {
-      const updated = await images.update(imageId, data, client);
+    const updated = await transaction(async (client) => {
+      const mediaData = await resolveMediaAsset(data, "product", mediaAssets, client);
+      const updated = await images.update(imageId, mediaData, client);
+      if (mediaData.media_asset_id) {
+        const attached = await mediaAssets.attach(mediaData.media_asset_id, "product_image", imageId, client);
+        if (!attached) throw badRequest("MEDIA_ASSET_ATTACH_FAILED", "Không thể gắn media asset vào ảnh sản phẩm");
+      }
       if (audits?.record) {
         await audits.record({
           userId,
@@ -75,13 +125,71 @@ export const createProductImageService = ({
       }
       return updated;
     });
+    if (existing.cloudinary_public_id && existing.cloudinary_public_id !== updated?.cloudinary_public_id) {
+      scheduleCleanup(mediaLifecycle, existing.cloudinary_public_id);
+    }
+    return updated;
+  },
+
+  async cropProductImage(imageId, { buffer, originalName = null } = {}, userId) {
+    const existing = await images.findById(imageId);
+    if (!existing) throw notFound("IMAGE_NOT_FOUND", "Không tìm thấy hình ảnh sản phẩm");
+    if (!buffer) throw badRequest("IMAGE_FILE_REQUIRED", "Cần cung cấp file ảnh để crop");
+
+    const sourcePublicId = existing.cloudinary_source_public_id || null;
+    let descriptor;
+    try {
+      descriptor = await cloudinary.upload({
+        buffer,
+        profile: "product",
+        originalName,
+        sourcePublicId,
+      });
+
+      const updated = await transaction(async (client) => {
+        const asset = await mediaAssets.create({ ...descriptor, asset_type: "product" }, client);
+        const result = await images.update(imageId, {
+          media_asset_id: asset.media_asset_id,
+          url_product_image: descriptor.url,
+          cloudinary_public_id: descriptor.cloudinary_public_id,
+          cloudinary_source_public_id: descriptor.cloudinary_source_public_id,
+          cloudinary_source_url: descriptor.cloudinary_source_url,
+          crop_profile: descriptor.crop_profile,
+          image_width: descriptor.image_width,
+          image_height: descriptor.image_height,
+          image_format: descriptor.image_format,
+        }, client);
+        if (!result) throw notFound("IMAGE_NOT_FOUND", "Không tìm thấy hình ảnh sản phẩm");
+        const attached = await mediaAssets.attach(asset.media_asset_id, "product_image", imageId, client);
+        if (!attached) throw badRequest("MEDIA_ASSET_ATTACH_FAILED", "Không thể gắn media asset vào ảnh sản phẩm");
+        if (audits?.record) {
+          await audits.record({
+            userId,
+            action: "crop_product_image",
+            entityName: "product_image",
+            entityId: imageId,
+            oldData: existing,
+            newData: result,
+          }, client);
+        }
+        return result;
+      });
+
+      if (existing.cloudinary_public_id && existing.cloudinary_public_id !== updated?.cloudinary_public_id) {
+        scheduleCleanup(mediaLifecycle, existing.cloudinary_public_id);
+      }
+      return updated;
+    } catch (error) {
+      if (descriptor) await compensateRecropUpload(cloudinary, descriptor, sourcePublicId);
+      throw error;
+    }
   },
 
   async deleteProductImage(imageId, userId) {
     const existing = await images.findById(imageId);
     if (!existing) throw notFound("IMAGE_NOT_FOUND", "Không tìm thấy hình ảnh sản phẩm");
 
-    return transaction(async (client) => {
+    const deleted = await transaction(async (client) => {
       await images.delete(imageId, client);
       if (audits?.record) {
         await audits.record({
@@ -92,7 +200,10 @@ export const createProductImageService = ({
           oldData: existing,
         }, client);
       }
+      return true;
     });
+    if (deleted && existing.cloudinary_public_id) scheduleCleanup(mediaLifecycle, existing.cloudinary_public_id);
+    return deleted;
   },
 
   async reorderProductImages(productId, imageItems, userId) {
@@ -134,6 +245,7 @@ export const {
   getProductImages,
   createProductImage,
   updateProductImage,
+  cropProductImage,
   deleteProductImage,
   reorderProductImages,
 } = defaultProductImageService;

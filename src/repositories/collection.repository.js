@@ -12,6 +12,13 @@ export const collectionRepository = {
         COALESCE(NULLIF(c.slug_collection, ''), LOWER(REPLACE(c.name_collection, ' ', '-'))) AS slug_collection,
         c.description_collection,
         c.image_collection,
+        c.cloudinary_public_id,
+        c.cloudinary_source_public_id,
+        c.cloudinary_source_url,
+        c.crop_profile,
+        c.image_width,
+        c.image_height,
+        c.image_format,
         0 AS position_collection,
         COALESCE(c.is_active, true) AS is_active,
         c.start_at,
@@ -38,6 +45,13 @@ export const collectionRepository = {
         COALESCE(NULLIF(c.slug_collection, ''), LOWER(REPLACE(c.name_collection, ' ', '-'))) AS slug_collection,
         c.description_collection,
         c.image_collection,
+        c.cloudinary_public_id,
+        c.cloudinary_source_public_id,
+        c.cloudinary_source_url,
+        c.crop_profile,
+        c.image_width,
+        c.image_height,
+        c.image_format,
         0 AS position_collection,
         COALESCE(c.is_active, true) AS is_active,
         c.start_at,
@@ -65,6 +79,13 @@ export const collectionRepository = {
         COALESCE(NULLIF(c.slug_collection, ''), LOWER(REPLACE(c.name_collection, ' ', '-'))) AS slug_collection,
         c.description_collection,
         c.image_collection,
+        c.cloudinary_public_id,
+        c.cloudinary_source_public_id,
+        c.cloudinary_source_url,
+        c.crop_profile,
+        c.image_width,
+        c.image_height,
+        c.image_format,
         0 AS position_collection,
         COALESCE(c.is_active, true) AS is_active,
         c.start_at,
@@ -105,6 +126,13 @@ export const collectionRepository = {
         COALESCE(NULLIF(c.slug_collection, ''), LOWER(REPLACE(c.name_collection, ' ', '-'))) AS slug_collection,
         c.description_collection,
         c.image_collection,
+        c.cloudinary_public_id,
+        c.cloudinary_source_public_id,
+        c.cloudinary_source_url,
+        c.crop_profile,
+        c.image_width,
+        c.image_height,
+        c.image_format,
         0 AS position_collection,
         COALESCE(c.is_active, true) AS is_active,
         c.start_at,
@@ -126,12 +154,19 @@ export const collectionRepository = {
         slug_collection,
         description_collection,
         image_collection,
+        cloudinary_public_id,
+        cloudinary_source_public_id,
+        cloudinary_source_url,
+        crop_profile,
+        image_width,
+        image_height,
+        image_format,
         is_active,
         start_at,
         end_at,
         created_at,
         updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW(), NOW())
       RETURNING *
     `;
     const { rows } = await runner(client).query(query, [
@@ -140,6 +175,13 @@ export const collectionRepository = {
       data.slug_collection || null,
       data.description_collection || null,
       data.image_collection || null,
+      data.cloudinary_public_id || null,
+      data.cloudinary_source_public_id || null,
+      data.cloudinary_source_url || null,
+      data.crop_profile || null,
+      data.image_width || null,
+      data.image_height || null,
+      data.image_format || null,
       data.is_active !== undefined ? data.is_active : true,
       data.start_at || null,
       data.end_at || null,
@@ -171,6 +213,12 @@ export const collectionRepository = {
     if (data.image_collection !== undefined) {
       sets.push(`image_collection = $${idx++}`);
       values.push(data.image_collection);
+    }
+    for (const field of ["cloudinary_public_id", "cloudinary_source_public_id", "cloudinary_source_url", "crop_profile", "image_width", "image_height", "image_format"]) {
+      if (data[field] !== undefined) {
+        sets.push(`${field} = $${idx++}`);
+        values.push(data[field]);
+      }
     }
     if (data.is_active !== undefined) {
       sets.push(`is_active = $${idx++}`);
