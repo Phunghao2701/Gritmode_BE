@@ -75,6 +75,52 @@ test("banner recrop keeps the row and cleans the old derivative after commit", a
   assert.deepEqual(cleaned, ["banners/old"]);
 });
 
+test("banner crop reuses the source and updates the same banner row", async () => {
+  const uploads = [];
+  const cleaned = [];
+  const existing = {
+    banner_id: 4,
+    image_url: "https://cdn.test/old.webp",
+    cloudinary_public_id: "banners/old",
+    cloudinary_source_public_id: "gritmode/banner/sources/master",
+  };
+  const service = createBannerService({
+    banners: {
+      findById: async () => existing,
+      updateImage: async (id, payload) => ({ ...existing, ...payload, banner_id: id }),
+    },
+    mediaAssets: {
+      create: async (payload) => ({ media_asset_id: 8, ...payload }),
+      attach: async () => true,
+    },
+    cloudinary: {
+      upload: async (payload) => {
+        uploads.push(payload);
+        return {
+          url: "https://cdn.test/new.webp",
+          cloudinary_public_id: "banners/new",
+          cloudinary_source_public_id: existing.cloudinary_source_public_id,
+          crop_profile: "banner",
+          image_width: 1920,
+          image_height: 1080,
+          image_format: "webp",
+        };
+      },
+      destroy: async () => {},
+    },
+    mediaLifecycle: { cleanupAfterCommit: async (id) => cleaned.push(id) },
+    cache: { del: async () => {} },
+    transaction: async (callback) => callback({}),
+  });
+
+  const updated = await service.cropHeroImage(4, { buffer: Buffer.from("image") });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(updated.banner_id, 4);
+  assert.equal(uploads[0].sourcePublicId, existing.cloudinary_source_public_id);
+  assert.deepEqual(cleaned, ["banners/old"]);
+});
+
 test("banner reorder requires a complete contiguous set of positions", async () => {
   const service = createBannerService({
     banners: {
