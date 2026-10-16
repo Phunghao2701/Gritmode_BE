@@ -20,16 +20,18 @@ export const createCloudinaryAssetService = ({
   async upload({ buffer, profile, originalName = null, sourcePublicId = null }) {
     const normalized = await normalize(buffer, profile);
     const sourceWasCreated = !sourcePublicId;
-    const source = sourcePublicId
-      ? { public_id: sourcePublicId, secure_url: null }
-      : await uploader.uploadBuffer(buffer, { folder: `gritmode/${getImageProfile(profile).folder}/sources`, resource_type: "image" });
+    const imageProfile = getImageProfile(profile);
+    const sourceUpload = sourcePublicId
+      ? Promise.resolve({ public_id: sourcePublicId, secure_url: null })
+      : uploader.uploadBuffer(buffer, { folder: `gritmode/${imageProfile.folder}/sources`, resource_type: "image" });
+    const derivativeUpload = uploader.uploadBuffer(normalized.buffer, {
+      folder: `gritmode/${imageProfile.folder}`,
+      resource_type: "image",
+      format: "webp",
+    });
 
     try {
-      const result = await uploader.uploadBuffer(normalized.buffer, {
-        folder: `gritmode/${getImageProfile(profile).folder}`,
-        resource_type: "image",
-        format: "webp",
-      });
+      const [source, result] = await Promise.all([sourceUpload, derivativeUpload]);
       return {
         url: result.secure_url,
         cloudinary_public_id: result.public_id,
@@ -43,12 +45,19 @@ export const createCloudinaryAssetService = ({
         size: result.bytes,
       };
     } catch (error) {
-      if (sourceWasCreated && source?.public_id) {
-        try {
-          await destroy(source.public_id);
-        } catch (cleanupError) {
-          error.cleanupError = cleanupError;
-        }
+      const [sourceResult, derivativeResult] = await Promise.allSettled([sourceUpload, derivativeUpload]);
+      const publicIds = new Set();
+      if (sourceWasCreated && sourceResult.status === "fulfilled" && sourceResult.value?.public_id) {
+        publicIds.add(sourceResult.value.public_id);
+      }
+      if (derivativeResult.status === "fulfilled" && derivativeResult.value?.public_id) {
+        publicIds.add(derivativeResult.value.public_id);
+      }
+
+      const cleanupResults = await Promise.allSettled([...publicIds].map((publicId) => destroy(publicId)));
+      const cleanupError = cleanupResults.find((result) => result.status === "rejected")?.reason;
+      if (cleanupError) {
+        error.cleanupError = cleanupError;
       }
       throw error;
     }
