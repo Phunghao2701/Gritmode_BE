@@ -3,11 +3,13 @@ import {
   getProductImages,
   createProductImage,
   updateProductImage,
+  cropProductImage,
   deleteProductImage,
   reorderProductImages,
 } from "../controllers/product-image.controller.js";
 import { requireAuth, requireRole } from "../middlewares/auth.middleware.js";
 import { validateBody } from "../middlewares/validate.middleware.js";
+import { imageUpload } from "../middlewares/image-upload.middleware.js";
 import {
   validateCreateProductImage,
   validateUpdateProductImage,
@@ -203,6 +205,7 @@ router.patch("/products/:productId/images/reorder", validateBody(validateReorder
  *         description: Không tìm thấy hình ảnh
  */
 router.patch("/product-images/:imageId", validateBody(validateUpdateProductImage), updateProductImage);
+router.post("/product-images/:imageId/crop", imageUpload.single("image"), cropProductImage);
 router.delete("/product-images/:imageId", deleteProductImage);
 
 export default router;

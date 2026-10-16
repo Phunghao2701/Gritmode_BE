@@ -6,6 +6,22 @@ import { auditRepository } from "../repositories/audit.repository.js";
 import { withTransaction } from "../config/database.js";
 import { mediaAssetRepository } from "../repositories/media-asset.repository.js";
 import { mediaAssetService } from "./media-asset.service.js";
+import { cloudinaryAssetService } from "./cloudinary-asset.service.js";
+
+const scheduleCleanup = (mediaLifecycle, publicId) => {
+  if (!publicId) return;
+  void Promise.resolve()
+    .then(() => mediaLifecycle.cleanupAfterCommit(publicId))
+    .catch((error) => console.warn("[product-image] background cleanup failed:", error?.message || error));
+};
+
+const compensateRecropUpload = async (cloudinary, descriptor, sourcePublicId) => {
+  const publicIds = [descriptor?.cloudinary_public_id];
+  if (!sourcePublicId && descriptor?.cloudinary_source_public_id && descriptor.cloudinary_source_public_id !== descriptor.cloudinary_public_id) {
+    publicIds.push(descriptor.cloudinary_source_public_id);
+  }
+  await Promise.all(publicIds.filter(Boolean).map((publicId) => cloudinary.destroy(publicId).catch(() => {})));
+};
 
 const resolveMediaAsset = async (data, assetType, mediaAssets, client) => {
   if (!data?.media_asset_id) return data;
@@ -33,6 +49,7 @@ export const createProductImageService = ({
   audits = auditRepository,
   mediaAssets = mediaAssetRepository,
   mediaLifecycle = mediaAssetService,
+  cloudinary = cloudinaryAssetService,
   transaction = withTransaction,
 } = {}) => ({
   async getProductImages(productId) {
@@ -109,9 +126,63 @@ export const createProductImageService = ({
       return updated;
     });
     if (existing.cloudinary_public_id && existing.cloudinary_public_id !== updated?.cloudinary_public_id) {
-      await mediaLifecycle.cleanupAfterCommit(existing.cloudinary_public_id);
+      scheduleCleanup(mediaLifecycle, existing.cloudinary_public_id);
     }
     return updated;
+  },
+
+  async cropProductImage(imageId, { buffer, originalName = null } = {}, userId) {
+    const existing = await images.findById(imageId);
+    if (!existing) throw notFound("IMAGE_NOT_FOUND", "Không tìm thấy hình ảnh sản phẩm");
+    if (!buffer) throw badRequest("IMAGE_FILE_REQUIRED", "Cần cung cấp file ảnh để crop");
+
+    const sourcePublicId = existing.cloudinary_source_public_id || null;
+    let descriptor;
+    try {
+      descriptor = await cloudinary.upload({
+        buffer,
+        profile: "product",
+        originalName,
+        sourcePublicId,
+      });
+
+      const updated = await transaction(async (client) => {
+        const asset = await mediaAssets.create({ ...descriptor, asset_type: "product" }, client);
+        const result = await images.update(imageId, {
+          media_asset_id: asset.media_asset_id,
+          url_product_image: descriptor.url,
+          cloudinary_public_id: descriptor.cloudinary_public_id,
+          cloudinary_source_public_id: descriptor.cloudinary_source_public_id,
+          cloudinary_source_url: descriptor.cloudinary_source_url,
+          crop_profile: descriptor.crop_profile,
+          image_width: descriptor.image_width,
+          image_height: descriptor.image_height,
+          image_format: descriptor.image_format,
+        }, client);
+        if (!result) throw notFound("IMAGE_NOT_FOUND", "Không tìm thấy hình ảnh sản phẩm");
+        const attached = await mediaAssets.attach(asset.media_asset_id, "product_image", imageId, client);
+        if (!attached) throw badRequest("MEDIA_ASSET_ATTACH_FAILED", "Không thể gắn media asset vào ảnh sản phẩm");
+        if (audits?.record) {
+          await audits.record({
+            userId,
+            action: "crop_product_image",
+            entityName: "product_image",
+            entityId: imageId,
+            oldData: existing,
+            newData: result,
+          }, client);
+        }
+        return result;
+      });
+
+      if (existing.cloudinary_public_id && existing.cloudinary_public_id !== updated?.cloudinary_public_id) {
+        scheduleCleanup(mediaLifecycle, existing.cloudinary_public_id);
+      }
+      return updated;
+    } catch (error) {
+      if (descriptor) await compensateRecropUpload(cloudinary, descriptor, sourcePublicId);
+      throw error;
+    }
   },
 
   async deleteProductImage(imageId, userId) {
@@ -131,7 +202,7 @@ export const createProductImageService = ({
       }
       return true;
     });
-    if (deleted && existing.cloudinary_public_id) await mediaLifecycle.cleanupAfterCommit(existing.cloudinary_public_id);
+    if (deleted && existing.cloudinary_public_id) scheduleCleanup(mediaLifecycle, existing.cloudinary_public_id);
     return deleted;
   },
 
@@ -174,6 +245,7 @@ export const {
   getProductImages,
   createProductImage,
   updateProductImage,
+  cropProductImage,
   deleteProductImage,
   reorderProductImages,
 } = defaultProductImageService;

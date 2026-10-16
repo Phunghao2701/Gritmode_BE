@@ -57,6 +57,18 @@ export const createBannerController = ({ service = bannerService } = {}) => ({
     }
   },
 
+  cropHeroImage: async (req, res, next) => {
+    try {
+      const data = await service.cropHeroImage(req.params.id, {
+        buffer: req.file?.buffer,
+        originalName: req.file?.originalname,
+      });
+      return ok(res, data, { code: "BANNER_IMAGE_CROPPED", message: "Cập nhật ảnh banner thành công" });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   updateImageOrder: async (req, res, next) => {
     try {
       const data = await service.updateImageOrder(req.params.id, req.body?.sort_order);

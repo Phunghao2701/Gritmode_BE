@@ -38,6 +38,20 @@ export const createProductImageController = ({
     }
   },
 
+  cropProductImage: async (req, res, next) => {
+    try {
+      const imageId = validatePositiveId(req.params.imageId);
+      const data = await service.cropProductImage(imageId, {
+        buffer: req.file?.buffer,
+        originalName: req.file?.originalname,
+      }, req.user?.user_id);
+      void invalidateProductCache().catch(() => {});
+      return ok(res, data, { code: "IMAGE_CROPPED" });
+    } catch (e) {
+      next(e);
+    }
+  },
+
   deleteProductImage: async (req, res, next) => {
     try {
       const imageId = validatePositiveId(req.params.imageId);
@@ -68,6 +82,7 @@ export const {
   getProductImages,
   createProductImage,
   updateProductImage,
+  cropProductImage,
   deleteProductImage,
   reorderProductImages,
 } = defaultProductImageController;

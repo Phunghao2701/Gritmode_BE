@@ -4,11 +4,27 @@ import { mediaAssetRepository } from "../repositories/media-asset.repository.js"
 import { mediaAssetService } from "./media-asset.service.js";
 import { withTransaction } from "../config/database.js";
 import { redisService } from "./redis.service.js";
+import { cloudinaryAssetService } from "./cloudinary-asset.service.js";
 
 const CACHE_KEY_ACTIVE_HERO = "cache:banners:active";
 const CACHE_TTL_SECONDS = 1800;
 
-export const createBannerService = ({ banners = bannerRepository, mediaAssets = mediaAssetRepository, mediaLifecycle = mediaAssetService, transaction = withTransaction, cache = redisService } = {}) => {
+const scheduleCleanup = (mediaLifecycle, publicId) => {
+  if (!publicId) return;
+  void Promise.resolve()
+    .then(() => mediaLifecycle.cleanupAfterCommit(publicId))
+    .catch((error) => console.warn("[banner] background cleanup failed:", error?.message || error));
+};
+
+const compensateRecropUpload = async (cloudinary, descriptor, sourcePublicId) => {
+  const publicIds = [descriptor?.cloudinary_public_id];
+  if (!sourcePublicId && descriptor?.cloudinary_source_public_id && descriptor.cloudinary_source_public_id !== descriptor.cloudinary_public_id) {
+    publicIds.push(descriptor.cloudinary_source_public_id);
+  }
+  await Promise.all(publicIds.filter(Boolean).map((publicId) => cloudinary.destroy(publicId).catch(() => {})));
+};
+
+export const createBannerService = ({ banners = bannerRepository, mediaAssets = mediaAssetRepository, mediaLifecycle = mediaAssetService, cloudinary = cloudinaryAssetService, transaction = withTransaction, cache = redisService } = {}) => {
   const invalidate = async () => {
     try { await cache.del(CACHE_KEY_ACTIVE_HERO); } catch (err) { console.warn("[BannerService] cache invalidation failed:", err.message); }
   };
@@ -98,10 +114,56 @@ export const createBannerService = ({ banners = bannerRepository, mediaAssets = 
         return result;
       });
       if (existing.cloudinary_public_id && existing.cloudinary_public_id !== updated.cloudinary_public_id) {
-        await mediaLifecycle.cleanupAfterCommit(existing.cloudinary_public_id);
+        scheduleCleanup(mediaLifecycle, existing.cloudinary_public_id);
       }
       await invalidate();
       return updated;
+    },
+    async cropHeroImage(bannerId, { buffer, originalName = null } = {}) {
+      const id = Number(bannerId);
+      if (!id || id <= 0) throw badRequest("INVALID_BANNER_ID", "Mã ảnh không hợp lệ");
+      const existing = await banners.findById(id);
+      if (!existing) throw notFound("BANNER_NOT_FOUND", "Không tìm thấy ảnh slide");
+      if (!buffer) throw badRequest("IMAGE_FILE_REQUIRED", "Cần cung cấp file ảnh để crop");
+
+      const sourcePublicId = existing.cloudinary_source_public_id || null;
+      let descriptor;
+      try {
+        descriptor = await cloudinary.upload({
+          buffer,
+          profile: "banner",
+          originalName,
+          sourcePublicId,
+        });
+
+        const updated = await transaction(async (client) => {
+          const asset = await mediaAssets.create({ ...descriptor, asset_type: "banner" }, client);
+          const result = await banners.updateImage(id, {
+            media_asset_id: asset.media_asset_id,
+            image_url: descriptor.url,
+            cloudinary_public_id: descriptor.cloudinary_public_id,
+            cloudinary_source_public_id: descriptor.cloudinary_source_public_id,
+            cloudinary_source_url: descriptor.cloudinary_source_url,
+            crop_profile: descriptor.crop_profile,
+            image_width: descriptor.image_width,
+            image_height: descriptor.image_height,
+            image_format: descriptor.image_format,
+          }, client);
+          if (!result) throw notFound("BANNER_NOT_FOUND", "Không tìm thấy ảnh slide");
+          const attached = await mediaAssets.attach(asset.media_asset_id, "banner", id, client);
+          if (!attached) throw badRequest("MEDIA_ASSET_ATTACH_FAILED", "Không thể gắn media asset vào banner");
+          return result;
+        });
+
+        if (existing.cloudinary_public_id && existing.cloudinary_public_id !== updated?.cloudinary_public_id) {
+          scheduleCleanup(mediaLifecycle, existing.cloudinary_public_id);
+        }
+        void invalidate().catch(() => {});
+        return updated;
+      } catch (error) {
+        if (descriptor) await compensateRecropUpload(cloudinary, descriptor, sourcePublicId);
+        throw error;
+      }
     },
     async updateImageOrder(bannerId, sortOrder) {
       const id = Number(bannerId);
@@ -142,7 +204,7 @@ export const createBannerService = ({ banners = bannerRepository, mediaAssets = 
       await transaction(async (client) => {
         await banners.delete(id, client);
       });
-      if (existing.cloudinary_public_id) await mediaLifecycle.cleanupAfterCommit(existing.cloudinary_public_id);
+      if (existing.cloudinary_public_id) scheduleCleanup(mediaLifecycle, existing.cloudinary_public_id);
       await invalidate();
       return { success: true, banner_id: id };
     },
@@ -156,6 +218,7 @@ export const updateHeroContent = (...args) => defaultBannerService.updateHeroCon
 export const addHeroImage = (...args) => defaultBannerService.addHeroImage(...args);
 export const toggleImageStatus = (...args) => defaultBannerService.toggleImageStatus(...args);
 export const updateHeroImage = (...args) => defaultBannerService.updateHeroImage(...args);
+export const cropHeroImage = (...args) => defaultBannerService.cropHeroImage(...args);
 export const updateImageOrder = (...args) => defaultBannerService.updateImageOrder(...args);
 export const reorderImages = (...args) => defaultBannerService.reorderImages(...args);
 export const deleteHeroImage = (...args) => defaultBannerService.deleteHeroImage(...args);
