@@ -21,6 +21,8 @@ adminBannerRouter.use(requireAuth, requireRole("admin"));
 adminBannerRouter.get("/", bannerController.getAdminHero);
 adminBannerRouter.put("/content", bannerController.updateHeroContent);
 adminBannerRouter.post("/images", bannerController.addHeroImage);
+adminBannerRouter.patch("/images/order", bannerController.reorderImages);
 adminBannerRouter.patch("/images/:id/status", bannerController.toggleImageStatus);
+adminBannerRouter.patch("/images/:id", bannerController.updateHeroImage);
 adminBannerRouter.patch("/images/:id/order", bannerController.updateImageOrder);
 adminBannerRouter.delete("/images/:id", bannerController.deleteHeroImage);

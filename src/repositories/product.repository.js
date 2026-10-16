@@ -221,7 +221,7 @@ export const productRepository = {
 
     const detailQueries = [
       () => db.query(
-        `SELECT product_image_id, url_product_image, alt_product_image, product_option_value_id, position_product_image
+        `SELECT product_image_id, url_product_image, alt_product_image, product_option_value_id, position_product_image, cloudinary_public_id, cloudinary_source_public_id, cloudinary_source_url, crop_profile, image_width, image_height, image_format
          FROM product_image
          WHERE product_id = $1
         ORDER BY position_product_image ASC, product_image_id ASC`,

@@ -59,6 +59,13 @@ export const bannerRepository = {
       SELECT 
         banner_id,
         image_url,
+        cloudinary_public_id,
+        cloudinary_source_public_id,
+        cloudinary_source_url,
+        crop_profile,
+        image_width,
+        image_height,
+        image_format,
         sort_order,
         is_active,
         created_at,
@@ -75,6 +82,13 @@ export const bannerRepository = {
       SELECT 
         banner_id,
         image_url,
+        cloudinary_public_id,
+        cloudinary_source_public_id,
+        cloudinary_source_url,
+        crop_profile,
+        image_width,
+        image_height,
+        image_format,
         sort_order,
         is_active,
         created_at,
@@ -92,6 +106,13 @@ export const bannerRepository = {
       SELECT 
         banner_id,
         image_url,
+        cloudinary_public_id,
+        cloudinary_source_public_id,
+        cloudinary_source_url,
+        crop_profile,
+        image_width,
+        image_height,
+        image_format,
         sort_order,
         is_active,
         created_at,
@@ -107,16 +128,30 @@ export const bannerRepository = {
     const query = `
       INSERT INTO banners (
         image_url,
+        cloudinary_public_id,
+        cloudinary_source_public_id,
+        cloudinary_source_url,
+        crop_profile,
+        image_width,
+        image_height,
+        image_format,
         title,
         link_url,
         sort_order,
         is_active
       )
-      VALUES ($1, $2, $3, $4, $5)
-      RETURNING banner_id, image_url, sort_order, is_active, created_at;
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      RETURNING banner_id, image_url, cloudinary_public_id, cloudinary_source_public_id, cloudinary_source_url, crop_profile, image_width, image_height, image_format, sort_order, is_active, created_at;
     `;
     const values = [
       data.image_url,
+      data.cloudinary_public_id || null,
+      data.cloudinary_source_public_id || null,
+      data.cloudinary_source_url || null,
+      data.crop_profile || null,
+      data.image_width || null,
+      data.image_height || null,
+      data.image_format || null,
       data.title || 'Hero Slide',
       '/products?sort=newest',
       Number.isInteger(data.sort_order) ? data.sort_order : 0,
@@ -139,6 +174,35 @@ export const bannerRepository = {
     return rows[0] || null;
   },
 
+  async updateImage(bannerId, data, client) {
+    const query = `
+      UPDATE banners
+      SET image_url = $2,
+          cloudinary_public_id = $3,
+          cloudinary_source_public_id = $4,
+          cloudinary_source_url = $5,
+          crop_profile = $6,
+          image_width = $7,
+          image_height = $8,
+          image_format = $9,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE banner_id = $1
+      RETURNING banner_id, image_url, cloudinary_public_id, cloudinary_source_public_id, cloudinary_source_url, crop_profile, image_width, image_height, image_format, sort_order, is_active, updated_at;
+    `;
+    const { rows } = await runner(client).query(query, [
+      bannerId,
+      data.image_url,
+      data.cloudinary_public_id || null,
+      data.cloudinary_source_public_id || null,
+      data.cloudinary_source_url || null,
+      data.crop_profile || null,
+      data.image_width || null,
+      data.image_height || null,
+      data.image_format || null,
+    ]);
+    return rows[0] || null;
+  },
+
   async updateSortOrder(bannerId, sortOrder, client) {
     const query = `
       UPDATE banners
@@ -150,6 +214,16 @@ export const bannerRepository = {
     `;
     const { rows } = await runner(client).query(query, [bannerId, sortOrder]);
     return rows[0] || null;
+  },
+
+  async updateSortOrders(items = [], client) {
+    for (const item of items) {
+      await runner(client).query(
+        `UPDATE banners SET sort_order = $2, updated_at = CURRENT_TIMESTAMP WHERE banner_id = $1`,
+        [item.banner_id, item.sort_order],
+      );
+    }
+    return this.listAll(client);
   },
 
   async delete(bannerId, client) {
