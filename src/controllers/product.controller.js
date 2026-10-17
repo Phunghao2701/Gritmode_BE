@@ -26,7 +26,7 @@ export const invalidateProductCache = async () => {
 
 // Cache invalidation is post-commit housekeeping. Do not hold the product
 // mutation response open while Redis scans the cache keyspace.
-const scheduleProductCacheInvalidation = () => {
+export const scheduleProductCacheInvalidation = () => {
   clearProductMemoryCache();
   void invalidateProductCache().catch((error) => {
     logger.error("[product] background cache invalidation failed", error);

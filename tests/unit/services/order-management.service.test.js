@@ -67,6 +67,25 @@ describe("order management service", () => {
     );
   });
 
+  test("getUserOrderById rejects missing authentication without falling back to admin detail", async () => {
+    let adminLookupCalled = false;
+    const service = createOrderService({
+      orders: {
+        findUserOrderById: async () => null,
+        findAdminOrderById: async () => {
+          adminLookupCalled = true;
+          return { order_id: 100, user_id: null };
+        },
+      },
+    });
+
+    await assert.rejects(
+      () => service.getUserOrderById(100),
+      (err) => err.statusCode === 404 && err.code === "ORDER_NOT_FOUND",
+    );
+    assert.equal(adminLookupCalled, false);
+  });
+
   // ── cancelUserOrder ──────────────────────────────────────────────────────
   test("cancelUserOrder cancels pending/confirmed order, releases inventory & updates payment", async () => {
     let releasedQty = 0;

@@ -1,6 +1,8 @@
 import { ok, created } from "../utils/api-response.js";
 import * as bannerService from "../services/banner.service.js";
 
+const getBannerId = (req) => req.validatedParams?.id ?? req.params.id;
+
 export const createBannerController = ({ service = bannerService } = {}) => ({
   getActiveHero: async (req, res, next) => {
     try {
@@ -23,7 +25,7 @@ export const createBannerController = ({ service = bannerService } = {}) => ({
 
   updateHeroContent: async (req, res, next) => {
     try {
-      const data = await service.updateHeroContent(req.body);
+      const data = await service.updateHeroContent(req.validatedBody || req.body);
       return ok(res, data, { message: "Cập nhật tiêu đề, mô tả và marquee thành công" });
     } catch (err) {
       next(err);
@@ -32,7 +34,7 @@ export const createBannerController = ({ service = bannerService } = {}) => ({
 
   addHeroImage: async (req, res, next) => {
     try {
-      const data = await service.addHeroImage(req.body);
+      const data = await service.addHeroImage(req.validatedBody || req.body);
       return created(res, data, { message: "Thêm ảnh slide mới thành công" });
     } catch (err) {
       next(err);
@@ -41,7 +43,7 @@ export const createBannerController = ({ service = bannerService } = {}) => ({
 
   toggleImageStatus: async (req, res, next) => {
     try {
-      const data = await service.toggleImageStatus(req.params.id, req.body?.is_active);
+      const data = await service.toggleImageStatus(getBannerId(req), (req.validatedBody || req.body)?.is_active);
       return ok(res, data, { message: "Cập nhật trạng thái hiển thị ảnh thành công" });
     } catch (err) {
       next(err);
@@ -50,7 +52,7 @@ export const createBannerController = ({ service = bannerService } = {}) => ({
 
   updateHeroImage: async (req, res, next) => {
     try {
-      const data = await service.updateHeroImage(req.params.id, req.body);
+      const data = await service.updateHeroImage(getBannerId(req), req.validatedBody || req.body);
       return ok(res, data, { message: "Cập nhật ảnh banner thành công" });
     } catch (err) {
       next(err);
@@ -59,7 +61,7 @@ export const createBannerController = ({ service = bannerService } = {}) => ({
 
   cropHeroImage: async (req, res, next) => {
     try {
-      const data = await service.cropHeroImage(req.params.id, {
+      const data = await service.cropHeroImage(getBannerId(req), {
         buffer: req.file?.buffer,
         originalName: req.file?.originalname,
       });
@@ -71,7 +73,7 @@ export const createBannerController = ({ service = bannerService } = {}) => ({
 
   updateImageOrder: async (req, res, next) => {
     try {
-      const data = await service.updateImageOrder(req.params.id, req.body?.sort_order);
+      const data = await service.updateImageOrder(getBannerId(req), (req.validatedBody || req.body)?.sort_order);
       return ok(res, data, { message: "Cập nhật thứ tự ảnh thành công" });
     } catch (err) {
       next(err);
@@ -80,7 +82,7 @@ export const createBannerController = ({ service = bannerService } = {}) => ({
 
   reorderImages: async (req, res, next) => {
     try {
-      const data = await service.reorderImages(req.body?.items);
+      const data = await service.reorderImages((req.validatedBody || req.body)?.items);
       return ok(res, data, { message: "Cập nhật thứ tự banner thành công" });
     } catch (err) {
       next(err);
@@ -89,7 +91,7 @@ export const createBannerController = ({ service = bannerService } = {}) => ({
 
   deleteHeroImage: async (req, res, next) => {
     try {
-      const data = await service.deleteHeroImage(req.params.id);
+      const data = await service.deleteHeroImage(getBannerId(req));
       return ok(res, data, { message: "Xóa ảnh slide thành công" });
     } catch (err) {
       next(err);

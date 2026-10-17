@@ -79,6 +79,8 @@ describe("admin order repository extensions", () => {
     assert.equal(res.order_id, 100);
     assert.equal(res.items.length, 1);
     assert.equal(res.customer_type, "registered");
+    const paymentQuery = mockClient.query.mock.calls.find((call) => call.arguments[0].includes("FROM payment"));
+    assert.match(paymentQuery?.arguments[0] || "", /ORDER BY created_at DESC, payment_id DESC LIMIT 1/);
   });
 
   test("lockOrderById locks order row FOR UPDATE", async () => {

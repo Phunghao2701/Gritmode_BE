@@ -21,7 +21,7 @@ const VALID_COD_TRANSITIONS = {
 export const createPaymentService = ({
   payments = paymentRepository,
   orders = orderRepository,
-  checksumKey = process.env.PAYOS_CHECKSUM_KEY,
+  checksumKey,
   payos = {
     create: callPayOSCreatePaymentLink,
     get: getPayOSPaymentLinkInfo,
@@ -410,7 +410,10 @@ export const createPaymentService = ({
    * Handle incoming payOS Webhook
    */
   async handlePayOSWebhook(webhookPayload = {}, client) {
-    const isValid = verifyPayOSWebhookSignature(webhookPayload, checksumKey);
+    // Resolve the default key at request time so tests and long-lived workers
+    // do not retain a stale environment value captured during module import.
+    const resolvedChecksumKey = checksumKey || process.env.PAYOS_CHECKSUM_KEY;
+    const isValid = verifyPayOSWebhookSignature(webhookPayload, resolvedChecksumKey);
     if (!isValid) {
       throw badRequest("INVALID_WEBHOOK_SIGNATURE", "Chữ ký webhook payOS không hợp lệ");
     }

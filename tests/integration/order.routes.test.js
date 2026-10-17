@@ -41,6 +41,7 @@ describe("order checkout HTTP contract", () => {
         data: {
           checkoutUrl: "https://pay.payos.vn/100",
           qrCode: "QR100",
+          paymentLinkId: "link-100",
         },
       },
     }));
@@ -66,7 +67,11 @@ describe("order checkout HTTP contract", () => {
     ]);
     mock.method(inventoryRepository, "lockStockByVariantId", async () => ({ quantity_available: 10 }));
     mock.method(inventoryRepository, "reserveStock", async () => ({ quantity_stock: 10, quantity_reserved: 2, quantity_available: 8 }));
-    mock.method(orderRepository, "createOrder", async (data) => ({ order_id: 101, ...data }));
+    mock.method(orderRepository, "createOrder", async (data) => ({
+      order_id: 101,
+      created_at: new Date().toISOString(),
+      ...data,
+    }));
     mock.method(orderRepository, "createOrderItems", async (items) => items);
     mock.method(orderRepository, "createOrderAddress", async (addr) => addr);
     mock.method(paymentRepository, "createPayment", async (data) => ({ payment_id: 1, ...data }));
@@ -91,6 +96,7 @@ describe("order checkout HTTP contract", () => {
     assert.equal(res.body.success, true);
     assert.equal(res.body.data.order_id, 101);
     assert.equal(res.body.data.payment.payment_method, "cod");
+    assert.match(res.body.data.detail_token, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
   });
 
   test("Authenticated user checkout with saved address creates order with payOS", async () => {

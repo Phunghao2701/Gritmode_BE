@@ -2987,3 +2987,97 @@ export const validateAuditLogQuery = (input = {}) => {
 export const validateSessionId = (value) => {
     return validatePositiveId(value);
 };
+
+const validateBannerTextField = (input, field, maxLength, errors, { required = false } = {}) => {
+    if (input[field] === undefined || input[field] === null) {
+        if (required) errors.push({ field, message: `${field} là bắt buộc` });
+        return undefined;
+    }
+
+    if (!isString(input[field])) {
+        errors.push({ field, message: `${field} phải là chuỗi` });
+        return undefined;
+    }
+
+    const value = input[field].trim();
+    if (required && !value) errors.push({ field, message: `${field} không được để trống` });
+    if (value.length > maxLength) errors.push({ field, message: `${field} không được vượt quá ${maxLength} ký tự` });
+    return value;
+};
+
+export const validateHeroContent = (input = {}) => {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+        return { ok: false, errors: [{ field: "body", message: "Dữ liệu không hợp lệ" }] };
+    }
+
+    const errors = [];
+    const value = {};
+    for (const [field, maxLength] of [
+        ["subtitle", 255],
+        ["title", 255],
+        ["description", 1000],
+        ["marquee_text", 1000],
+    ]) {
+        const fieldValue = validateBannerTextField(input, field, maxLength, errors, { required: field === "title" && input[field] !== undefined });
+        if (fieldValue !== undefined) value[field] = fieldValue;
+    }
+
+    return errors.length ? { ok: false, errors } : { ok: true, value };
+};
+
+export const validateBannerImagePayload = (input = {}) => {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+        return { ok: false, errors: [{ field: "body", message: "Dữ liệu không hợp lệ" }] };
+    }
+
+    const errors = [];
+    const imageUrl = validateBannerTextField(input, "image_url", 2048, errors, { required: true });
+    const value = {};
+    if (imageUrl !== undefined) value.image_url = imageUrl;
+
+    if (input.media_asset_id !== undefined && input.media_asset_id !== null && input.media_asset_id !== "") {
+        const parsed = Number(input.media_asset_id);
+        if (!Number.isSafeInteger(parsed) || parsed <= 0) errors.push({ field: "media_asset_id", message: "media_asset_id không hợp lệ" });
+        else value.media_asset_id = parsed;
+    }
+
+    if (input.sort_order !== undefined && input.sort_order !== null && input.sort_order !== "") {
+        const parsed = Number(input.sort_order);
+        if (!Number.isInteger(parsed) || parsed < 0) errors.push({ field: "sort_order", message: "sort_order phải là số nguyên không âm" });
+        else value.sort_order = parsed;
+    }
+
+    return errors.length ? { ok: false, errors } : { ok: true, value };
+};
+
+export const validateBannerStatusPayload = (input = {}) => {
+    if (!input || typeof input !== "object" || Array.isArray(input) || typeof input.is_active !== "boolean") {
+        return { ok: false, errors: [{ field: "is_active", message: "is_active phải là boolean" }] };
+    }
+    return { ok: true, value: { is_active: input.is_active } };
+};
+
+export const validateBannerSortOrderPayload = (input = {}) => {
+    const sortOrder = Number(input?.sort_order);
+    if (!Number.isInteger(sortOrder) || sortOrder < 0) {
+        return { ok: false, errors: [{ field: "sort_order", message: "sort_order phải là số nguyên không âm" }] };
+    }
+    return { ok: true, value: { sort_order: sortOrder } };
+};
+
+export const validateBannerOrderPayload = (input = {}) => {
+    if (!input || typeof input !== "object" || !Array.isArray(input.items) || input.items.length === 0) {
+        return { ok: false, errors: [{ field: "items", message: "items phải là danh sách banner không rỗng" }] };
+    }
+
+    const errors = [];
+    const items = input.items.map((item, index) => {
+        const bannerId = Number(item?.banner_id);
+        const sortOrder = Number(item?.sort_order ?? index);
+        if (!Number.isSafeInteger(bannerId) || bannerId <= 0) errors.push({ field: `items[${index}].banner_id`, message: "banner_id không hợp lệ" });
+        if (!Number.isInteger(sortOrder) || sortOrder < 0) errors.push({ field: `items[${index}].sort_order`, message: "sort_order không hợp lệ" });
+        return { banner_id: bannerId, sort_order: sortOrder };
+    });
+
+    return errors.length ? { ok: false, errors } : { ok: true, value: { items } };
+};

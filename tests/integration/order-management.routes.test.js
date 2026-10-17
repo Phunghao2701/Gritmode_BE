@@ -65,6 +65,11 @@ describe("customer & guest order management HTTP contract", () => {
       assert.equal(res.status, 401);
     });
 
+    test("GET /api/v1/orders/:orderId requires authentication", async () => {
+      const res = await request(app).get("/api/v1/orders/100");
+      assert.equal(res.status, 401);
+    });
+
     test("GET /api/v1/orders returns list of user orders", async () => {
       mock.method(orderRepository, "findUserOrders", async () => [sampleDetail]);
       mock.method(orderRepository, "countUserOrders", async () => 1);
@@ -105,6 +110,7 @@ describe("customer & guest order management HTTP contract", () => {
 
     test("PATCH /api/v1/orders/:orderId/cancel cancels pending order", async () => {
       mock.method(orderRepository, "findUserOrderById", async () => sampleDetail);
+      mock.method(orderRepository, "lockOrderById", async () => sampleDetail);
       mock.method(orderRepository, "findOrderItems", async () => sampleDetail.items);
       mock.method(inventoryRepository, "releaseReservedStock", async () => ({}));
       mock.method(paymentRepository, "cancelPendingPaymentByOrderId", async () => ({}));
@@ -166,6 +172,7 @@ describe("customer & guest order management HTTP contract", () => {
 
     test("POST /api/v1/orders/guest/:orderCode/cancel cancels guest order", async () => {
       mock.method(orderRepository, "findGuestOrder", async () => sampleDetail);
+      mock.method(orderRepository, "lockOrderById", async () => sampleDetail);
       mock.method(orderRepository, "findOrderItems", async () => sampleDetail.items);
       mock.method(inventoryRepository, "releaseReservedStock", async () => ({}));
       mock.method(paymentRepository, "cancelPendingPaymentByOrderId", async () => ({}));

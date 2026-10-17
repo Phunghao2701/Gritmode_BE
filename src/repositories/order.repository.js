@@ -177,7 +177,13 @@ export const orderRepository = {
         p.payment_method,
         p.status_payment
       FROM "order" o
-      LEFT JOIN payment p ON p.order_id = o.order_id
+      LEFT JOIN LATERAL (
+        SELECT payment_method, status_payment
+        FROM payment
+        WHERE order_id = o.order_id
+        ORDER BY created_at DESC, payment_id DESC
+        LIMIT 1
+      ) p ON true
       WHERE ${whereClause}
       ORDER BY o.created_at DESC
       LIMIT $${idx} OFFSET $${idx + 1}
@@ -259,7 +265,10 @@ export const orderRepository = {
 
     const items = await this.findOrderItems(orderId, client);
     const address = await this.findOrderAddress(orderId, client);
-    const paymentRes = await runner(client).query(`SELECT * FROM payment WHERE order_id = $1`, [orderId]);
+    const paymentRes = await runner(client).query(
+      `SELECT * FROM payment WHERE order_id = $1 ORDER BY created_at DESC, payment_id DESC LIMIT 1`,
+      [orderId],
+    );
 
     return {
       ...order,
@@ -297,7 +306,10 @@ export const orderRepository = {
 
     const items = await this.findOrderItems(order.order_id, client);
     const address = await this.findOrderAddress(order.order_id, client);
-    const paymentRes = await runner(client).query(`SELECT * FROM payment WHERE order_id = $1`, [order.order_id]);
+    const paymentRes = await runner(client).query(
+      `SELECT * FROM payment WHERE order_id = $1 ORDER BY created_at DESC, payment_id DESC LIMIT 1`,
+      [order.order_id],
+    );
 
     return {
       ...order,
@@ -480,7 +492,13 @@ export const orderRepository = {
     const query = `
       SELECT COUNT(*) AS count
       FROM "order" o
-      LEFT JOIN payment p ON p.order_id = o.order_id
+      LEFT JOIN LATERAL (
+        SELECT payment_method, status_payment
+        FROM payment
+        WHERE order_id = o.order_id
+        ORDER BY created_at DESC, payment_id DESC
+        LIMIT 1
+      ) p ON true
       ${whereClause}
     `;
 
@@ -496,7 +514,10 @@ export const orderRepository = {
 
     const items = await this.findOrderItems(orderId, client);
     const address = await this.findOrderAddress(orderId, client);
-    const paymentRes = await runner(client).query(`SELECT * FROM payment WHERE order_id = $1`, [orderId]);
+    const paymentRes = await runner(client).query(
+      `SELECT * FROM payment WHERE order_id = $1 ORDER BY created_at DESC, payment_id DESC LIMIT 1`,
+      [orderId],
+    );
 
     return {
       ...order,
