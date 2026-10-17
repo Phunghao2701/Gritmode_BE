@@ -50,7 +50,9 @@ export const createOrderService = ({
 
       const result = await transaction(async (client) => {
         // 1. Find active cart
-        const cart = await carts.findActiveByOwner(owner, client);
+        const cart = carts.lockActiveByOwner
+          ? await carts.lockActiveByOwner(owner, client)
+          : await carts.findActiveByOwner(owner, client);
         if (!cart || cart.status_cart !== "active") {
           throw notFound("CART_NOT_FOUND", "Không tìm thấy giỏ hàng khả dụng để đặt hàng");
         }
@@ -99,17 +101,18 @@ export const createOrderService = ({
         let discountAmount = 0;
 
         if (input.voucher_code) {
-          const voucherResult = await vouchers.validateVoucher(
-            {
-              code_voucher: input.voucher_code,
-              cart: { items: cartItems, subtotal },
-            },
-            { client },
-          );
+          const voucherResult = vouchers.validateVoucherForCart
+            ? await vouchers.validateVoucherForCart({
+              cart: { items: cartItems, summary: { subtotal } },
+              codeVoucher: input.voucher_code,
+              client,
+            })
+            : await vouchers.validateVoucher(owner, input.voucher_code);
+          const validatedVoucher = voucherResult?.voucher || voucherResult;
 
-          if (voucherResult && voucherResult.voucher) {
-            voucherId = voucherResult.voucher.voucher_id;
-            voucherCode = voucherResult.voucher.code_voucher;
+          if (validatedVoucher?.voucher_id) {
+            voucherId = validatedVoucher.voucher_id;
+            voucherCode = validatedVoucher.code_voucher;
             discountAmount = Number(voucherResult.discount_amount || 0);
 
             // Increment voucher usage
@@ -222,12 +225,15 @@ export const createOrderService = ({
           await inventories.reserveStock(item.product_variant_id, qty, client);
         }
 
+        const detailToken = owner.type === "guest" ? createOrderDetailToken(createdOrder) : null;
+
         // 12. Create Payment
         const paymentResult = await payments.createPayment(
           {
             order: createdOrder,
             paymentMethod: input.payment_method,
             total,
+            detailToken,
           },
           client,
         );
@@ -257,7 +263,7 @@ export const createOrderService = ({
 
         return {
           ...createdResult,
-          detail_token: owner.type === "guest" ? createOrderDetailToken(createdResult) : undefined,
+          detail_token: detailToken || undefined,
           __queuedNotifications: queuedNotifications,
         };
       });

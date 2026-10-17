@@ -20,6 +20,7 @@ export const createPaymentController = ({
           email: req.headers["x-guest-email"] || payload.email,
           phone: req.headers["x-guest-phone"] || payload.phone,
         },
+        detailToken: req.headers["x-order-detail-token"],
       }));
       return created(res, result, { message: "Tạo link thanh toán payOS thành công" });
     } catch (error) {

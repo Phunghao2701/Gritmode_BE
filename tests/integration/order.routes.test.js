@@ -53,6 +53,7 @@ describe("order checkout HTTP contract", () => {
 
   test("Guest checkout with COD creates order successfully", async () => {
     mock.method(cartRepository, "findActiveByOwner", async () => ({ cart_id: 10, status_cart: "active" }));
+    mock.method(cartRepository, "lockActiveByOwner", async () => ({ cart_id: 10, status_cart: "active" }));
     mock.method(cartRepository, "getDetailedItems", async () => [
       {
         cart_item_id: 1,
@@ -101,6 +102,7 @@ describe("order checkout HTTP contract", () => {
 
   test("Authenticated user checkout with saved address creates order with payOS", async () => {
     mock.method(cartRepository, "findActiveByOwner", async () => ({ cart_id: 11, status_cart: "active" }));
+    mock.method(cartRepository, "lockActiveByOwner", async () => ({ cart_id: 11, status_cart: "active" }));
     mock.method(cartRepository, "getDetailedItems", async () => [
       {
         cart_item_id: 1,
@@ -151,6 +153,7 @@ describe("order checkout HTTP contract", () => {
 
   test("Checkout rejects empty cart with 400", async () => {
     mock.method(cartRepository, "findActiveByOwner", async () => ({ cart_id: 12, status_cart: "active" }));
+    mock.method(cartRepository, "lockActiveByOwner", async () => ({ cart_id: 12, status_cart: "active" }));
     mock.method(cartRepository, "getDetailedItems", async () => []);
 
     const res = await request(app)

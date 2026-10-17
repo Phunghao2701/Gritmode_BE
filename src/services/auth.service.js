@@ -183,6 +183,7 @@ export const createAuthService = ({
         const newRefreshToken = createRefreshToken();
         const updated = await sessions.rotate(
           session.user_session_id,
+          hashed,
           hashToken(newRefreshToken),
           new Date(Date.now() + tokenOptions.refreshTtlMs),
           context.userAgent,

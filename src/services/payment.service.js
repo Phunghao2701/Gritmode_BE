@@ -312,14 +312,14 @@ export const createPaymentService = ({
   /**
    * Create / Retry payOS Payment Link
    */
-  async createPayOSPayment({ orderId, user, guestInfo = {} }, client) {
+  async createPayOSPayment({ orderId, user, guestInfo = {}, detailToken = null }, client) {
     const order = await orders.findById(orderId, client);
     if (!order) {
       throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
     }
 
     // Verify ownership
-    assertOrderAccess(order, user, guestInfo);
+    assertOrderAccess(order, user, guestInfo, detailToken);
 
     if (order.status_order !== "pending") {
       throw conflict("ORDER_CANNOT_BE_PAID", `Không thể thanh toán đơn hàng đang ở trạng thái ${order.status_order}`);
@@ -348,8 +348,8 @@ export const createPaymentService = ({
       amount: Number(order.total_order),
       description: `ORDER${order.order_id}`,
       orderId: order.order_id,
-      returnUrl: getOrderSuccessUrl(order.order_id),
-      cancelUrl: getOrderSuccessUrl(order.order_id),
+      returnUrl: getOrderSuccessUrl(order.order_id, detailToken),
+      cancelUrl: getOrderSuccessUrl(order.order_id, detailToken),
     });
 
     const checkoutUrl = payosResult?.checkoutUrl;
@@ -366,7 +366,7 @@ export const createPaymentService = ({
         throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
       }
 
-      assertOrderAccess(lockedOrder, user, guestInfo);
+      assertOrderAccess(lockedOrder, user, guestInfo, detailToken);
       if (lockedOrder.status_order !== "pending") {
         throw conflict("ORDER_CANNOT_BE_PAID", `Không thể thanh toán đơn hàng đang ở trạng thái ${lockedOrder.status_order}`);
       }
@@ -539,7 +539,7 @@ export const createPaymentService = ({
   /**
    * Create payment for order (Generic router)
    */
-  async createPayment({ order, paymentMethod, total }, client) {
+  async createPayment({ order, paymentMethod, total, detailToken = null }, client) {
     if (paymentMethod === "cod") {
       return this.createCodPayment({ order, total }, client);
     }
@@ -553,8 +553,8 @@ export const createPaymentService = ({
         amount: Number(total),
         description: `ORDER${order.order_id}`,
         orderId: order.order_id,
-        returnUrl: getOrderSuccessUrl(order.order_id),
-        cancelUrl: getOrderSuccessUrl(order.order_id),
+        returnUrl: getOrderSuccessUrl(order.order_id, detailToken),
+        cancelUrl: getOrderSuccessUrl(order.order_id, detailToken),
       });
 
        const checkoutUrl = payosResult?.checkoutUrl;
@@ -587,12 +587,14 @@ export const createPaymentService = ({
   };
 };
 
-const getOrderSuccessUrl = (orderId) => {
+const getOrderSuccessUrl = (orderId, detailToken = null) => {
   const frontendUrl = process.env.FRONTEND_URL || process.env.PAYOS_RETURN_URL;
   if (!frontendUrl || !orderId) return undefined;
 
   try {
-    return new URL(`/orders/${Number(orderId)}/success`, frontendUrl).toString();
+    const url = new URL(`/orders/${Number(orderId)}/success`, frontendUrl);
+    if (detailToken) url.searchParams.set("token", detailToken);
+    return url.toString();
   } catch {
     return undefined;
   }
