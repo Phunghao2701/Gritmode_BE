@@ -5,7 +5,7 @@ import {
 } from "../services/inventory.service.js";
 import { ok } from "../utils/api-response.js";
 import logger from "../utils/logger.js";
-import { invalidateProductCache } from "./product.controller.js";
+import { scheduleProductCacheInvalidation } from "./product.controller.js";
 
 export const createInventoryController = ({
   service = {
@@ -54,7 +54,7 @@ export const createInventoryController = ({
       const data = req.validatedBody || {};
       const userId = req.user?.user_id;
       const result = await service.updateInventory(variantId, data, userId);
-      await invalidateProductCache();
+      scheduleProductCacheInvalidation();
       return ok(res, result, { code: "INVENTORY_UPDATED", message: "Cập nhật tồn kho thành công" });
     } catch (err) {
       logger.error("[inventory] updateInventory error:", err);

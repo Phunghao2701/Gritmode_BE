@@ -113,6 +113,8 @@ _ops/
 # Local agent/workflow material (kept on developer machines only)
 /scripts/*
 !/scripts/sync-administrative-data.js
+!/scripts/inspect-schema.js
+!/scripts/check-repository-reads.js
 /tasks/
 /docs/
 /deploy/
