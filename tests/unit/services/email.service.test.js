@@ -144,7 +144,7 @@ describe("email service", () => {
     assert.doesNotMatch(message.html, /THANH TOÁN THÀNH CÔNG/);
     assert.match(message.html, /Essential &lt;Tee&gt;/);
     assert.match(message.html, /GRITMODE<\/div>/);
-    assert.match(message.html, /https:\/\/gritmode\.vn\/orders\/1\/success\?token=.+#order-details/);
+    assert.match(message.html, /https:\/\/gritmode\.vn\/orders\/1\?token=.+#order-details/);
   });
 
   test("shows paid wording only for a paid PayOS order", async () => {
@@ -168,5 +168,67 @@ describe("email service", () => {
     });
     assert.match(html, /THANH TOÁN THÀNH CÔNG/);
     assert.match(html, /Đã thanh toán/);
+  });
+
+  test("uses one public origin when FRONTEND_URL contains multiple CORS origins", async () => {
+    let html;
+    const service = createEmailService({
+      env: {
+        EMAIL_PROVIDER: "smtp",
+        EMAIL_USER: "sender@example.com",
+        CLIENT_ID: "id",
+        CLIENT_SECRET: "secret",
+        REFRESH_TOKEN: "refresh",
+        FRONTEND_URL: "https://gritmode.vn,https://localhost:3000",
+        ORDER_DETAIL_LINK_SECRET: "test-order-detail-secret",
+      },
+      transportFactory: () => ({ sendMail: async (message) => { html = message.html; return {}; } }),
+    });
+
+    await service.sendOrderConfirmationEmail({
+      order_id: 3, order_code: "ORD-MULTI-ORIGIN", email_order: "buyer@example.com", created_at: new Date(),
+      subtotal_order: 100000, discount_order: 0, shipping_fee_order: 0, total_order: 100000,
+      payment: { payment_method: "cod", status_payment: "pending" }, items: [], address: {},
+    });
+
+    assert.match(html, /https:\/\/gritmode\.vn\/orders\/3\?token=.+#order-details/);
+    assert.doesNotMatch(html, /https:\/\/localhost:3000/);
+  });
+
+  test("renders a branded and safe contact email with a reply action", async () => {
+    let message;
+    const service = createEmailService({
+      env: {
+        EMAIL_PROVIDER: "smtp",
+        EMAIL_USER: "sender@example.com",
+        SUPPORT_EMAIL: "support@example.com",
+        CLIENT_ID: "id",
+        CLIENT_SECRET: "secret",
+        REFRESH_TOKEN: "refresh",
+      },
+      transportFactory: () => ({
+        sendMail: async (input) => {
+          message = input;
+          return { messageId: "contact-message" };
+        },
+      }),
+    });
+
+    await service.sendContactEmail({
+      fullName: "A <script>",
+      email: "buyer@example.com",
+      phone: null,
+      topic: "other",
+      message: "Need help <now>",
+    }, { idempotencyKey: "contact-test" });
+
+    assert.equal(message.to, "support@example.com");
+    assert.match(message.subject, /Gritmode Contact/);
+    assert.match(message.html, /GRITMODE/);
+    assert.match(message.html, /CONTACT CENTER/);
+    assert.match(message.html, /A &lt;script&gt;/);
+    assert.match(message.html, /Need help &lt;now&gt;/);
+    assert.match(message.html, /mailto:buyer@example\.com/);
+    assert.doesNotMatch(message.html, /<script>/);
   });
 });
