@@ -127,7 +127,8 @@ describe("product option & variant repositories", () => {
       { rowCount: 2 }, // replaceOptionValuesMap delete
       { rowCount: 2 }, // replaceOptionValuesMap insert
       { rows: [{ has_ref: true }] }, // hasReferences true (cart/order)
-      { rowCount: 1 }, // delete
+      { rowCount: 2 }, // delete option-value links
+      { rowCount: 1 }, // delete variant
     ];
 
     mock.method(pool, "query", async () => responses.shift());
@@ -164,5 +165,22 @@ describe("product option & variant repositories", () => {
     assert.equal(hasRef, true);
 
     await productVariantRepository.delete(101);
+  });
+
+  test("deletes variant option links before deleting the variant", async () => {
+    const queries = [];
+    mock.method(pool, "query", async (sql, params) => {
+      queries.push({ sql, params });
+      return queries.length === 1 ? { rowCount: 2 } : { rowCount: 1 };
+    });
+
+    const deleted = await productVariantRepository.delete(101);
+
+    assert.equal(deleted, true);
+    assert.equal(queries.length, 2);
+    assert.match(queries[0].sql, /DELETE FROM product_variant_option_value/i);
+    assert.deepEqual(queries[0].params, [101]);
+    assert.match(queries[1].sql, /DELETE FROM product_variant\s+WHERE product_variant_id = \$1/i);
+    assert.deepEqual(queries[1].params, [101]);
   });
 });

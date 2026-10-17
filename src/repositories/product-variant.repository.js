@@ -225,8 +225,18 @@ export const productVariantRepository = {
   },
 
   async delete(variantId, client) {
+    const db = runner(client);
+
+    // Some production databases were created with the legacy RESTRICT FK
+    // on product_variant_option_value. Keep the delete safe even before the
+    // cascade-alignment migration has been applied.
+    await db.query(
+      `DELETE FROM product_variant_option_value WHERE product_variant_id = $1`,
+      [variantId],
+    );
+
     const query = `DELETE FROM product_variant WHERE product_variant_id = $1`;
-    const { rowCount } = await runner(client).query(query, [variantId]);
+    const { rowCount } = await db.query(query, [variantId]);
     return rowCount > 0;
   },
 };
