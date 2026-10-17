@@ -94,6 +94,76 @@ describe("order service", () => {
     assert.equal(emailedOrder.items.length, 1);
   });
 
+  test("persists authenticated checkout phone and new address once", async () => {
+    let updatedProfile = null;
+    let createdAddress = null;
+    let matchingAddressLookups = 0;
+
+    const service = createOrderService({
+      carts: {
+        findActiveByOwner: async () => sampleCart,
+        getDetailedItems: async () => sampleCartItems,
+        updateStatus: async () => {},
+      },
+      inventories: {
+        lockStockByVariantId: async () => ({ quantity_available: 10 }),
+        reserveStock: async () => {},
+      },
+      users: {
+        updateProfile: async (userId, fields) => {
+          updatedProfile = { userId, fields };
+          return { user_id: userId, ...fields };
+        },
+      },
+      addresses: {
+        findMatching: async () => {
+          matchingAddressLookups += 1;
+          return null;
+        },
+        countByUser: async () => 0,
+        unsetDefault: async () => {},
+        create: async (userId, fields) => {
+          createdAddress = { userId, fields };
+          return createdAddress;
+        },
+      },
+      orders: {
+        createOrder: async (data) => ({ order_id: 1004, ...data }),
+        createOrderItems: async () => [],
+        createOrderAddress: async (data) => data,
+      },
+      payments: {
+        createPayment: async () => ({ payment_method: "cod", status_payment: "pending" }),
+      },
+      emails: { sendOrderConfirmationEmail: async () => {} },
+      transaction,
+    });
+
+    await service.createOrder(
+      {
+        payment_method: "cod",
+        receiver_name_order_address: "Nguyen Van D",
+        phone_order: "0907654321",
+        phone_order_address: "0907654321",
+        address_line_order_address: "12 New Street",
+        ward_order_address: "Ward 1",
+        district_order_address: "District 1",
+        province_order_address: "HCM",
+      },
+      {
+        owner: { type: "user", userId: "u1" },
+        user: { user_id: "u1", email: "user@example.com", phone: null },
+        persistCheckoutContact: true,
+      },
+    );
+
+    assert.deepEqual(updatedProfile, { userId: "u1", fields: { phone: "0907654321" } });
+    assert.equal(matchingAddressLookups, 1);
+    assert.equal(createdAddress.userId, "u1");
+    assert.equal(createdAddress.fields.is_default, true);
+    assert.equal(createdAddress.fields.address_line_user_address, "12 New Street");
+  });
+
   test("creates order with payOS payment and returns payment url & qr", async () => {
     const service = createOrderService({
       carts: {

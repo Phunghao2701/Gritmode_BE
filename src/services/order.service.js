@@ -4,6 +4,7 @@ import { cartRepository } from "../repositories/cart.repository.js";
 import { inventoryRepository } from "../repositories/inventory.repository.js";
 import { orderRepository } from "../repositories/order.repository.js";
 import { addressRepository } from "../repositories/address.repository.js";
+import { userRepository } from "../repositories/user.repository.js";
 import { voucherRepository } from "../repositories/voucher.repository.js";
 import { voucherService } from "./voucher.service.js";
 import { paymentService } from "./payment.service.js";
@@ -26,6 +27,7 @@ export const createOrderService = ({
   inventories = inventoryRepository,
   orders = orderRepository,
   addresses = addressRepository,
+  users = userRepository,
   vouchers = voucherService,
   voucherRepo = voucherRepository,
   payments = paymentService,
@@ -169,6 +171,55 @@ export const createOrderService = ({
             communeCode = savedAddr.commune_code || communeCode;
             administrativeDatasetId = savedAddr.administrative_dataset_id || administrativeDatasetId;
             phoneOrder = phoneOrder || phoneAddress;
+          }
+        }
+
+        // Keep the signed-in customer's profile useful after checkout. The
+        // checkout form can contain a new address instead of a saved one, so
+        // persist it once and avoid duplicates on later orders.
+        if (context.user && context.persistCheckoutContact) {
+          if (
+            phoneOrder
+            && users?.updateProfile
+            && String(phoneOrder) !== String(context.user.phone || "")
+          ) {
+            await users.updateProfile(context.user.user_id, { phone: phoneOrder }, client);
+          }
+
+          const hasNewAddress = Boolean(receiverName && phoneAddress && addressLine);
+          if (!input.user_address_id && hasNewAddress && addresses?.create) {
+            const existingAddress = addresses.findMatching
+              ? await addresses.findMatching(context.user.user_id, {
+                receiverName,
+                phone: phoneAddress,
+                addressLine,
+                ward,
+                district,
+                province,
+              }, client)
+              : null;
+
+            if (!existingAddress) {
+              const addressCount = addresses.countByUser
+                ? await addresses.countByUser(context.user.user_id, client)
+                : 0;
+              const isDefault = addressCount === 0;
+              if (isDefault && addresses.unsetDefault) {
+                await addresses.unsetDefault(context.user.user_id, client);
+              }
+              await addresses.create(context.user.user_id, {
+                receiver_name_user_address: receiverName,
+                phone_user_address: phoneAddress,
+                address_line_user_address: addressLine,
+                ward_user_address: ward,
+                district_user_address: district,
+                province_user_address: province,
+                province_code: provinceCode || null,
+                commune_code: communeCode || null,
+                administrative_dataset_id: administrativeDatasetId || null,
+                is_default: isDefault,
+              }, client);
+            }
           }
         }
 

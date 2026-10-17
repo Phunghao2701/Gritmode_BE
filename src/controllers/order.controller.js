@@ -15,6 +15,7 @@ export const createOrderController = ({
       const context = {
         owner: req.cartOwner,
         user: req.user || null,
+        persistCheckoutContact: true,
       };
       const result = toClientOrder(await orders.createOrder(payload, context));
       return ok(res, result, {

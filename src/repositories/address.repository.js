@@ -50,6 +50,31 @@ export const addressRepository = {
     return Number(rows[0]?.count) || 0;
   },
 
+  async findMatching(userId, {
+    receiverName,
+    phone,
+    addressLine,
+    ward = null,
+    district = null,
+    province = null,
+  }, client) {
+    const { rows } = await runner(client).query(
+      `SELECT ${columns}
+       FROM user_address
+       WHERE user_id = $1
+         AND receiver_name_user_address = $2
+         AND phone_user_address = $3
+         AND address_line_user_address = $4
+         AND COALESCE(ward_user_address, '') = COALESCE($5, '')
+         AND COALESCE(district_user_address, '') = COALESCE($6, '')
+         AND COALESCE(province_user_address, '') = COALESCE($7, '')
+       ORDER BY is_default DESC, updated_at DESC
+       LIMIT 1`,
+      [userId, receiverName, phone, addressLine, ward, district, province],
+    );
+    return rows[0] || null;
+  },
+
   async findNewest(userId, client) {
     const { rows } = await runner(client).query(
       `SELECT ${columns} FROM user_address WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`,
