@@ -30,7 +30,11 @@ describe("product image repository", () => {
       { rowCount: 1 }, // delete
     ];
 
-    mock.method(pool, "query", async () => responses.shift());
+    const calls = [];
+    mock.method(pool, "query", async (query, params) => {
+      calls.push({ query, params });
+      return responses.shift();
+    });
 
     const list = await productImageRepository.listByProduct(100);
     assert.equal(list.length, 1);
@@ -49,6 +53,8 @@ describe("product image repository", () => {
       position_product_image: 1,
     });
     assert.equal(created.product_image_id, 1);
+    assert.match(calls[3].query, /\$12/);
+    assert.equal(calls[3].params.length, 12);
 
     const updated = await productImageRepository.update(1, { alt_product_image: "New Alt" });
     assert.equal(updated.alt_product_image, "New Alt");
