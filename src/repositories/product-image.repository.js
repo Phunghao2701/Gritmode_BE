@@ -89,7 +89,7 @@ export const productImageRepository = {
         image_format,
         created_at,
         updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
       RETURNING product_image_id, product_id, product_option_value_id, url_product_image, alt_product_image, position_product_image, cloudinary_public_id, cloudinary_source_public_id, cloudinary_source_url, crop_profile, image_width, image_height, image_format, created_at, updated_at
     `;
     const { rows } = await runner(client).query(query, [
