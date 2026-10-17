@@ -312,14 +312,14 @@ export const createPaymentService = ({
   /**
    * Create / Retry payOS Payment Link
    */
-  async createPayOSPayment({ orderId, user, guestInfo = {} }, client) {
+  async createPayOSPayment({ orderId, user, guestInfo = {}, detailToken = null }, client) {
     const order = await orders.findById(orderId, client);
     if (!order) {
       throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
     }
 
     // Verify ownership
-    assertOrderAccess(order, user, guestInfo);
+    assertOrderAccess(order, user, guestInfo, detailToken);
 
     if (order.status_order !== "pending") {
       throw conflict("ORDER_CANNOT_BE_PAID", `Không thể thanh toán đơn hàng đang ở trạng thái ${order.status_order}`);
@@ -348,8 +348,8 @@ export const createPaymentService = ({
       amount: Number(order.total_order),
       description: `ORDER${order.order_id}`,
       orderId: order.order_id,
-      returnUrl: getOrderSuccessUrl(order.order_id),
-      cancelUrl: getOrderSuccessUrl(order.order_id),
+      returnUrl: getOrderSuccessUrl(order.order_id, detailToken),
+      cancelUrl: getOrderSuccessUrl(order.order_id, detailToken),
     });
 
     const checkoutUrl = payosResult?.checkoutUrl;
@@ -366,7 +366,7 @@ export const createPaymentService = ({
         throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
       }
 
-      assertOrderAccess(lockedOrder, user, guestInfo);
+      assertOrderAccess(lockedOrder, user, guestInfo, detailToken);
       if (lockedOrder.status_order !== "pending") {
         throw conflict("ORDER_CANNOT_BE_PAID", `Không thể thanh toán đơn hàng đang ở trạng thái ${lockedOrder.status_order}`);
       }
@@ -504,7 +504,12 @@ export const createPaymentService = ({
       throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
     }
 
-    assertOrderAccess(order, userOrGuest?.user_id ? userOrGuest : null, userOrGuest?.guestInfo || userOrGuest);
+    assertOrderAccess(
+      order,
+      userOrGuest?.user_id ? userOrGuest : null,
+      userOrGuest?.guestInfo || userOrGuest,
+      userOrGuest?.detailToken,
+    );
 
     const initialPayment = await payments.findByOrderId(orderId, client);
     if (!initialPayment) {
@@ -521,7 +526,12 @@ export const createPaymentService = ({
         throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
       }
 
-      assertOrderAccess(lockedOrder, userOrGuest?.user_id ? userOrGuest : null, userOrGuest?.guestInfo || userOrGuest);
+      assertOrderAccess(
+        lockedOrder,
+        userOrGuest?.user_id ? userOrGuest : null,
+        userOrGuest?.guestInfo || userOrGuest,
+        userOrGuest?.detailToken,
+      );
 
       const payment = await payments.findByOrderId(orderId, tx);
       if (!payment) {
@@ -539,7 +549,7 @@ export const createPaymentService = ({
   /**
    * Create payment for order (Generic router)
    */
-  async createPayment({ order, paymentMethod, total }, client) {
+  async createPayment({ order, paymentMethod, total, detailToken = null, deferProvider = false }, client) {
     if (paymentMethod === "cod") {
       return this.createCodPayment({ order, total }, client);
     }
@@ -548,22 +558,36 @@ export const createPaymentService = ({
       const payosOrderCode = generatePayOSOrderCode();
       const expiredAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
-       const payosResult = await payos.create({
+      if (deferProvider) {
+        return payments.createPayment(
+          {
+            order_id: order.order_id,
+            payment_method: "payos",
+            status_payment: "pending",
+            amount_payment: total,
+            payos_order_code: payosOrderCode,
+            expired_at: expiredAt,
+          },
+          client,
+        );
+      }
+
+      const payosResult = await payos.create({
         orderCode: payosOrderCode,
         amount: Number(total),
         description: `ORDER${order.order_id}`,
         orderId: order.order_id,
-        returnUrl: getOrderSuccessUrl(order.order_id),
-        cancelUrl: getOrderSuccessUrl(order.order_id),
+        returnUrl: getOrderSuccessUrl(order.order_id, detailToken),
+        cancelUrl: getOrderSuccessUrl(order.order_id, detailToken),
       });
 
-       const checkoutUrl = payosResult?.checkoutUrl;
-       const qrCode = payosResult?.qrCode;
-       const paymentLinkId = payosResult?.paymentLinkId;
-       const paymentDisplay = await getPayOSDisplayData(payosResult, `ORDER${order.order_id}`);
-       if (!checkoutUrl || !qrCode || !paymentLinkId) {
-         throw new AppError(502, "PAYOS_PROVIDER_FAILED", "PayOS trả về payment link không đầy đủ");
-       }
+      const checkoutUrl = payosResult?.checkoutUrl;
+      const qrCode = payosResult?.qrCode;
+      const paymentLinkId = payosResult?.paymentLinkId;
+      const paymentDisplay = await getPayOSDisplayData(payosResult, `ORDER${order.order_id}`);
+      if (!checkoutUrl || !qrCode || !paymentLinkId) {
+        throw new AppError(502, "PAYOS_PROVIDER_FAILED", "PayOS trả về payment link không đầy đủ");
+      }
 
       return payments.createPayment(
         {
@@ -584,15 +608,70 @@ export const createPaymentService = ({
 
     throw badRequest("UNSUPPORTED_PAYMENT_METHOD", `Phương thức thanh toán không được hỗ trợ: ${paymentMethod}`);
   },
+
+  /**
+   * Finalize a PayOS payment after the order transaction has committed.
+   */
+  async finalizePayOSPayment({ order, payment, detailToken = null }, client) {
+    if (!payment?.payment_id || payment.payment_method !== "payos" || !payment.payos_order_code) {
+      throw new AppError(500, "PAYOS_PAYMENT_INVALID", "Payment PayOS chưa được khởi tạo đầy đủ");
+    }
+
+    let providerPaymentCreated = false;
+    try {
+      const payosResult = await payos.create({
+        orderCode: Number(payment.payos_order_code),
+        amount: Number(payment.amount_payment ?? order.total_order),
+        description: `ORDER${order.order_id}`,
+        orderId: order.order_id,
+        returnUrl: getOrderSuccessUrl(order.order_id, detailToken),
+        cancelUrl: getOrderSuccessUrl(order.order_id, detailToken),
+      });
+
+      const checkoutUrl = payosResult?.checkoutUrl;
+      const qrCode = payosResult?.qrCode;
+      const paymentLinkId = payosResult?.paymentLinkId;
+      const paymentDisplay = await getPayOSDisplayData(payosResult, `ORDER${order.order_id}`);
+      if (!checkoutUrl || !qrCode || !paymentLinkId) {
+        throw new AppError(502, "PAYOS_PROVIDER_FAILED", "PayOS trả về payment link không đầy đủ");
+      }
+      providerPaymentCreated = true;
+
+      const updated = await payments.updatePayOSPayment(
+        payment.payment_id,
+        {
+          payos_payment_link_id: paymentLinkId,
+          checkout_url: checkoutUrl,
+          qr_code: qrCode,
+          ...paymentDisplay,
+          expired_at: new Date(Date.now() + 15 * 60 * 1000),
+        },
+        client,
+      );
+      if (!updated) {
+        throw new AppError(503, "PAYOS_PAYMENT_PERSIST_FAILED", "Không thể lưu payment link PayOS");
+      }
+      return updated;
+    } catch (error) {
+      // Once PayOS has issued a valid link, keep the local payment pending so
+      // a webhook can still settle it if persistence failed transiently.
+      if (!providerPaymentCreated && payments.markPaymentExpired) {
+        await payments.markPaymentExpired(payment.payment_id, client).catch(() => {});
+      }
+      throw error;
+    }
+  },
   };
 };
 
-const getOrderSuccessUrl = (orderId) => {
+const getOrderSuccessUrl = (orderId, detailToken = null) => {
   const frontendUrl = process.env.FRONTEND_URL || process.env.PAYOS_RETURN_URL;
   if (!frontendUrl || !orderId) return undefined;
 
   try {
-    return new URL(`/orders/${Number(orderId)}/success`, frontendUrl).toString();
+    const url = new URL(`/orders/${Number(orderId)}/success`, frontendUrl);
+    if (detailToken) url.searchParams.set("token", detailToken);
+    return url.toString();
   } catch {
     return undefined;
   }

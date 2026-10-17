@@ -136,6 +136,61 @@ export const createVoucherService = ({
       };
     },
 
+    /** Validate the checkout cart snapshot within the active transaction. */
+    async validateVoucherForCart({ cart, codeVoucher, client }) {
+      if (!cart || !Array.isArray(cart.items) || cart.items.length === 0) {
+        throw badRequest("CART_EMPTY", "Cart is empty");
+      }
+
+      const subtotal = Number(cart.summary?.subtotal ?? cart.subtotal ?? 0);
+      if (!Number.isFinite(subtotal) || subtotal <= 0) {
+        throw badRequest("CART_EMPTY", "Cart is empty");
+      }
+
+      const normalizedCode = String(codeVoucher || "").trim().toUpperCase();
+      if (!normalizedCode) {
+        throw badRequest("VOUCHER_CODE_REQUIRED", "Voucher code is required");
+      }
+
+      const voucher = await vouchers.findByCode(normalizedCode, client);
+      if (!voucher) throw notFound("VOUCHER_NOT_FOUND", "Voucher not found");
+
+      const now = new Date();
+      if (!voucher.is_active) throw badRequest("VOUCHER_INACTIVE", "Voucher is inactive");
+      if (voucher.start_at && new Date(voucher.start_at) > now) {
+        throw badRequest("VOUCHER_NOT_STARTED", "Voucher is not active yet");
+      }
+      if (voucher.end_at && new Date(voucher.end_at) < now) {
+        throw badRequest("VOUCHER_EXPIRED", "Voucher has expired");
+      }
+      if (
+        voucher.usage_limit !== null &&
+        voucher.usage_limit !== undefined &&
+        Number(voucher.usage_count) >= Number(voucher.usage_limit)
+      ) {
+        throw conflict("VOUCHER_EXHAUSTED", "Voucher usage limit has been reached");
+      }
+
+      const minimumOrder = Number(voucher.minimum_order_amount || 0);
+      if (subtotal < minimumOrder) {
+        const error = badRequest("MINIMUM_ORDER_NOT_MET", "Order subtotal does not meet voucher minimum");
+        error.data = { minimum_order_amount: minimumOrder, current_subtotal: subtotal };
+        throw error;
+      }
+
+      const discountAmount = calculateVoucherDiscount(voucher, subtotal);
+      return {
+        voucher_id: Number(voucher.voucher_id),
+        code_voucher: voucher.code_voucher,
+        name_voucher: voucher.name_voucher,
+        discount_type: voucher.discount_type,
+        discount_value: Number(voucher.discount_value),
+        subtotal,
+        discount_amount: discountAmount,
+        total_after_discount: Math.max(0, subtotal - discountAmount),
+      };
+    },
+
     /**
      * Admin list vouchers
      */

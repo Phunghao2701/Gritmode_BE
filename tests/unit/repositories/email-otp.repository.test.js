@@ -102,6 +102,8 @@ describe("email-otp repository", () => {
       const result = await emailOtpRepository.markVerified(1, mockClient);
       assert.ok(result);
       assert.ok(result.verified_at);
+      assert.match(mockClient.query.mock.calls[0].arguments[0], /verified_at IS NULL/);
+      assert.match(mockClient.query.mock.calls[0].arguments[0], /expired_at > NOW\(\)/);
     });
   });
 });

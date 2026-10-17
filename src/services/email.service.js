@@ -15,6 +15,12 @@ if (dns.setDefaultResultOrder) {
 
 const hashForIdempotency = (value) => createHash("sha256").update(String(value)).digest("hex");
 
+const resolvePublicWebUrl = (env = process.env) => String(env.PUBLIC_WEB_URL || env.FRONTEND_URL || "")
+  .split(",")
+  .map((value) => value.trim())
+  .find(Boolean)
+  ?.replace(/\/+$/, "") || "";
+
 const escapeHtml = (value = "") => String(value).replace(/[&<>'"]/g, (char) => ({
   "&": "&amp;",
   "<": "&lt;",
@@ -185,7 +191,8 @@ export const createEmailService = ({
         },
       tls: {
         servername: env.SMTP_TLS_SERVERNAME || smtpHost,
-        rejectUnauthorized: false,
+        rejectUnauthorized: String(env.SMTP_TLS_REJECT_UNAUTHORIZED ?? "true").trim().toLowerCase() !== "false",
+        ...(env.SMTP_TLS_CA ? { ca: env.SMTP_TLS_CA } : {}),
       },
       connectionTimeout: 10000,
       greetingTimeout: 10000,
@@ -279,7 +286,7 @@ export const createEmailService = ({
           subject: `GRITMODE | Xác nhận đơn hàng #${order.order_code}`,
           text: orderConfirmationText(order),
           html: renderOrderConfirmationEmail(order, {
-            frontendUrl: env.FRONTEND_URL,
+            frontendUrl: resolvePublicWebUrl(env),
             supportEmail: env.SUPPORT_EMAIL || env.EMAIL_USER,
             hotline: env.SUPPORT_HOTLINE,
             timeZone: env.APP_TIMEZONE || "Asia/Ho_Chi_Minh",
@@ -307,6 +314,7 @@ export const createEmailService = ({
       const safeEmail = escapeHtml(email);
       const safePhone = escapeHtml(phone || "Không cung cấp");
       const safeMessage = escapeHtml(message).replace(/\n/g, "<br>");
+      const emailHref = `mailto:${safeEmail}`;
       const text = [
         `Họ tên: ${fullName}`,
         `Email: ${email}`,
@@ -317,15 +325,61 @@ export const createEmailService = ({
         message,
       ].join("\n");
       const html = `
-        <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111">
-          <h2 style="margin:0 0 20px">Tin nhắn mới từ website Gritmode</h2>
-          <p><strong>Chủ đề:</strong> ${escapeHtml(topicLabel)}</p>
-          <p><strong>Họ tên:</strong> ${safeName}</p>
-          <p><strong>Email:</strong> ${safeEmail}</p>
-          <p><strong>Số điện thoại:</strong> ${safePhone}</p>
-          <p><strong>Nội dung:</strong></p>
-          <p style="white-space:normal">${safeMessage}</p>
-        </div>`;
+        <!doctype html>
+        <html lang="vi">
+          <body style="margin:0;background:#f4f4f2;color:#111;font-family:Arial,Helvetica,sans-serif">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f4f2;padding:32px 16px">
+              <tr>
+                <td align="center">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;background:#fff;border:1px solid #e5e5e5;border-radius:18px;overflow:hidden">
+                    <tr>
+                      <td style="padding:28px 32px;background:#0a0a0a;color:#fff">
+                        <div style="font-size:22px;font-weight:800;letter-spacing:2px">GRITMODE<sup style="font-size:9px">®</sup></div>
+                        <div style="margin-top:8px;color:#b8b8b8;font-size:11px;font-weight:700;letter-spacing:2px">CONTACT CENTER</div>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:32px">
+                        <div style="color:#999;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase">Tin nhắn mới từ website</div>
+                        <h1 style="margin:10px 0 8px;font-size:26px;line-height:1.2;font-weight:800">${escapeHtml(topicLabel)}</h1>
+                        <p style="margin:0;color:#777;font-size:14px;line-height:1.6">Khách hàng đã gửi một yêu cầu hỗ trợ tới Gritmode.</p>
+
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:28px;border-top:1px solid #ededed">
+                          <tr>
+                            <td style="padding:14px 0;border-bottom:1px solid #ededed;color:#999;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;width:34%">Họ tên</td>
+                            <td style="padding:14px 0;border-bottom:1px solid #ededed;font-size:14px;font-weight:700">${safeName}</td>
+                          </tr>
+                          <tr>
+                            <td style="padding:14px 0;border-bottom:1px solid #ededed;color:#999;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Email</td>
+                            <td style="padding:14px 0;border-bottom:1px solid #ededed;font-size:14px"><a href="${emailHref}" style="color:#111;text-decoration:underline">${safeEmail}</a></td>
+                          </tr>
+                          <tr>
+                            <td style="padding:14px 0;border-bottom:1px solid #ededed;color:#999;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Số điện thoại</td>
+                            <td style="padding:14px 0;border-bottom:1px solid #ededed;font-size:14px">${safePhone}</td>
+                          </tr>
+                        </table>
+
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;background:#f7f7f5;border-radius:12px">
+                          <tr>
+                            <td style="padding:20px">
+                              <div style="color:#999;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase">Nội dung</div>
+                              <div style="margin-top:10px;font-size:15px;line-height:1.7;white-space:normal">${safeMessage}</div>
+                            </td>
+                          </tr>
+                        </table>
+
+                        <p style="margin:28px 0 0"><a href="${emailHref}" style="display:inline-block;padding:13px 20px;background:#0a0a0a;border-radius:999px;color:#fff;font-size:12px;font-weight:700;letter-spacing:1px;text-decoration:none;text-transform:uppercase">Phản hồi khách hàng</a></p>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:18px 32px;border-top:1px solid #ededed;color:#999;font-size:11px;line-height:1.6">Email này được gửi từ form liên hệ trên gritmode.vn.</td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </body>
+        </html>`;
 
       try {
         const result = await dispatchSend({

@@ -1,4 +1,4 @@
-import { createHmac, randomInt } from "node:crypto";
+import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import axios from "axios";
 import { AppError } from "../errors/app-error.js";
 
@@ -70,7 +70,9 @@ export const verifyPayOSWebhookSignature = (webhookBody = {}, checksumKey = "") 
   }
 
   const expectedSignature = createPayOSSignature(webhookBody.data, checksumKey);
-  return expectedSignature.toLowerCase() === String(webhookBody.signature).toLowerCase();
+  const expected = Buffer.from(expectedSignature.toLowerCase(), "utf8");
+  const received = Buffer.from(String(webhookBody.signature).toLowerCase(), "utf8");
+  return expected.length === received.length && timingSafeEqual(expected, received);
 };
 
 /**

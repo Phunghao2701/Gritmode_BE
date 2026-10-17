@@ -114,6 +114,37 @@ export const paymentRepository = {
     return rows[0] || null;
   },
 
+  async updatePayOSPayment(paymentId, data = {}, client) {
+    const query = `
+      UPDATE payment
+      SET payos_payment_link_id = $2,
+          checkout_url = $3,
+          qr_code = $4,
+          payos_bank_name = $5,
+          payos_account_number = $6,
+          payos_account_name = $7,
+          payos_transfer_description = $8,
+          expired_at = $9,
+          updated_at = NOW()
+      WHERE payment_id = $1
+        AND payment_method = 'payos'
+        AND status_payment = 'pending'
+      RETURNING ${paymentColumns}
+    `;
+    const { rows } = await runner(client).query(query, [
+      paymentId,
+      data.payos_payment_link_id || null,
+      data.checkout_url || null,
+      data.qr_code || null,
+      data.payos_bank_name || null,
+      data.payos_account_number || null,
+      data.payos_account_name || null,
+      data.payos_transfer_description || null,
+      data.expired_at || null,
+    ]);
+    return rows[0] || null;
+  },
+
   async cancelPendingPayOSPaymentById(paymentId, client) {
     const query = `
       UPDATE payment
@@ -185,6 +216,21 @@ export const paymentRepository = {
       RETURNING ${paymentColumns}
     `;
     const { rows } = await runner(client).query(query, [paymentId]);
+    return rows[0] || null;
+  },
+
+  async markRefunded(paymentId, { providerReference = null } = {}, client) {
+    const query = `
+      UPDATE payment
+      SET status_payment = 'refunded',
+          payos_transaction_reference = COALESCE($2, payos_transaction_reference),
+          updated_at = NOW()
+      WHERE payment_id = $1
+        AND payment_method = 'payos'
+        AND status_payment = 'paid'
+      RETURNING ${paymentColumns}
+    `;
+    const { rows } = await runner(client).query(query, [paymentId, providerReference || null]);
     return rows[0] || null;
   },
 };

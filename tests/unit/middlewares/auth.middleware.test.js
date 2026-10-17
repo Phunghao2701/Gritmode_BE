@@ -57,6 +57,9 @@ describe("auth middleware", () => {
     const validToken = jwt.sign({ role: "customer", session_id: 55 }, secret, { subject: "u123" });
     const authMiddleware = createAuthenticate({
       secret,
+      sessions: {
+        findActiveById: async (id) => ({ user_session_id: id, user_id: "u123" }),
+      },
       users: {
         findById: async (id) => (id === "u123" ? { user_id: "u123", email: "a@b.com", role: "customer", status: "active" } : null),
       },
@@ -81,6 +84,9 @@ describe("auth middleware", () => {
     // Inactive user
     const inactiveAuthMiddleware = createAuthenticate({
       secret,
+      sessions: {
+        findActiveById: async (id) => ({ user_session_id: id, user_id: "u123" }),
+      },
       users: {
         findById: async () => ({ user_id: "u123", email: "a@b.com", role: "customer", status: "blocked" }),
       },
@@ -95,6 +101,9 @@ describe("auth middleware", () => {
     // Missing user
     const missingUserAuthMiddleware = createAuthenticate({
       secret,
+      sessions: {
+        findActiveById: async (id) => ({ user_session_id: id, user_id: "u123" }),
+      },
       users: { findById: async () => null },
     });
     err = null;
@@ -103,5 +112,21 @@ describe("auth middleware", () => {
     });
     assert.equal(err.statusCode, 401);
     assert.equal(err.code, "TOKEN_INVALID");
+  });
+
+  test("createAuthenticate rejects a revoked or foreign session", async () => {
+    const validToken = jwt.sign({ role: "customer", session_id: 55 }, secret, { subject: "u123" });
+    const authMiddleware = createAuthenticate({
+      secret,
+      sessions: { findActiveById: async () => null },
+      users: { findById: async () => ({ user_id: "u123", status: "active" }) },
+    });
+
+    let err = null;
+    await authMiddleware({ headers: { authorization: `Bearer ${validToken}` } }, {}, (e) => {
+      err = e;
+    });
+    assert.equal(err.statusCode, 401);
+    assert.equal(err.code, "SESSION_INVALID");
   });
 });

@@ -41,6 +41,7 @@ describe("COD payment integration flow", () => {
 
   test("Guest checkout with COD creates order and pending payment", async () => {
     mock.method(cartRepository, "findActiveByOwner", async () => ({ cart_id: 10, status_cart: "active" }));
+    mock.method(cartRepository, "lockActiveByOwner", async () => ({ cart_id: 10, status_cart: "active" }));
     mock.method(cartRepository, "getDetailedItems", async () => [
       {
         cart_item_id: 1,

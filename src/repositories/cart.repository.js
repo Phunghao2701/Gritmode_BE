@@ -10,6 +10,14 @@ export const cartRepository = {
     return rows[0] || null;
   },
 
+  async lockActiveByOwner(owner, client) {
+    const db = client || pool;
+    const { rows } = owner.type === "user"
+      ? await db.query(`SELECT cart_id,user_id,guest_token,status_cart,created_at,updated_at FROM cart WHERE user_id=$1 AND status_cart='active' LIMIT 1 FOR UPDATE`, [owner.userId])
+      : await db.query(`SELECT cart_id,user_id,guest_token,status_cart,created_at,updated_at FROM cart WHERE guest_token=$1 AND status_cart='active' LIMIT 1 FOR UPDATE`, [owner.guestToken]);
+    return rows[0] || null;
+  },
+
   async create(owner, client) {
     const db = client || pool;
     if (owner.type === "guest" && owner.guestToken) {

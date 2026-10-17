@@ -68,6 +68,8 @@ export const emailOtpRepository = {
       UPDATE email_otp
       SET verified_at = NOW()
       WHERE email_otp_id = $1
+        AND verified_at IS NULL
+        AND expired_at > NOW()
       RETURNING ${projection}
     `;
     const { rows } = await runner(client).query(query, [emailOtpId]);

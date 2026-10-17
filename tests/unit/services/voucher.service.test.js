@@ -139,6 +139,19 @@ describe("voucher service", () => {
       assert.equal(res.total_after_discount, 900000);
     });
 
+    test("validates checkout snapshots through the transaction client", async () => {
+      const client = { query: mock.fn() };
+      const res = await service.validateVoucherForCart({
+        cart: { items: [{ product_variant_id: 10 }], summary: { subtotal: 1000000 } },
+        codeVoucher: " summer10 ",
+        client,
+      });
+
+      assert.equal(res.voucher_id, 1);
+      assert.equal(res.discount_amount, 100000);
+      assert.equal(vouchers.findByCode.mock.calls[0].arguments[1], client);
+    });
+
     test("throws 400 CART_EMPTY when cart has no items", async () => {
       carts.getCart = mock.fn(async () => ({ items: [], summary: { total_items: 0, subtotal: 0 } }));
       await assert.rejects(

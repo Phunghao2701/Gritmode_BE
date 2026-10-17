@@ -2,16 +2,22 @@ import pkg from "pg";
 
 const { Pool } = pkg;
 
-// Có thể override SSL vì một số PostgreSQL pooler/dev tunnel không hỗ trợ SSL
-// dù hostname không phải localhost.
+// SSL is enabled for remote PostgreSQL. Production always verifies the
+// certificate; local/dev tunnels may opt out explicitly when necessary.
 const sslOverride = String(process.env.POSTGRES_SSL || "").trim().toLowerCase();
+const sslVerificationOverride = String(process.env.POSTGRES_SSL_REJECT_UNAUTHORIZED || "").trim().toLowerCase();
+const isProduction = String(process.env.NODE_ENV || "development").trim().toLowerCase() === "production";
 const isLocal = process.env.POSTGRES_URL && (process.env.POSTGRES_URL.includes("localhost") || process.env.POSTGRES_URL.includes("127.0.0.1"));
+const sslOptions = {
+  rejectUnauthorized: isProduction || !["false", "0", "no"].includes(sslVerificationOverride),
+  ...(process.env.POSTGRES_CA ? { ca: process.env.POSTGRES_CA } : {}),
+};
 const useSsl = sslOverride === "false" || sslOverride === "0" || sslOverride === "disable"
   ? false
   : sslOverride === "true" || sslOverride === "1"
-  ? { rejectUnauthorized: false }
+  ? sslOptions
   : !isLocal
-  ? { rejectUnauthorized: false }
+  ? sslOptions
   : false;
 
 const pool = new Pool({

@@ -101,6 +101,20 @@ describe("repositories", () => {
     );
   });
 
+  test("session repository rotates only when the current refresh hash still matches", async () => {
+    const client = {
+      query: async (sql, params) => {
+        assert.match(sql, /SET refresh_token_hash=\$2, expired_at=\$3/);
+        assert.match(sql, /WHERE user_session_id=\$1 AND refresh_token_hash=\$6/);
+        assert.deepEqual(params, [7, "new-hash", "2030-01-01", "agent", "127.0.0.1", "old-hash"]);
+        return { rows: [{ user_session_id: 7, user_id: "u1" }] };
+      },
+    };
+
+    const rotated = await sessionRepository.rotate(7, "old-hash", "new-hash", "2030-01-01", "agent", "127.0.0.1", client);
+    assert.equal(rotated.user_session_id, 7);
+  });
+
   test("address repository performs owned CRUD, lookups and atomic default switch", async () => {
     const addressRow = {
       user_address_id: 1,

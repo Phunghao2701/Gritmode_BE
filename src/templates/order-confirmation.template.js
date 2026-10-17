@@ -50,7 +50,7 @@ export const renderOrderConfirmationEmail = (order, {
   const payment = order.payment || {};
   const paid = payment.payment_method === "payos" && payment.status_payment === "paid";
   const orderCode = escapeHtml(order.order_code);
-  const detailUrl = `${String(frontendUrl || "").replace(/\/$/, "")}/orders/${encodeURIComponent(order.order_id)}/success?token=${encodeURIComponent(orderDetailToken)}#order-details`;
+  const detailUrl = `${String(frontendUrl || "").replace(/\/$/, "")}/orders/${encodeURIComponent(order.order_id)}?token=${encodeURIComponent(orderDetailToken)}#order-details`;
   const statusTitle = paid ? "THANH TOÁN THÀNH CÔNG" : "ĐƠN HÀNG ĐÃ ĐƯỢC TIẾP NHẬN";
   const statusText = paid
     ? `${money(order.total_order)} đã được ghi nhận qua PayOS / VietQR.<br>GRITMODE sẽ bắt đầu xử lý đơn hàng của bạn.`

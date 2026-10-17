@@ -94,7 +94,7 @@ describe("auth service (Passwordless Email OTP)", () => {
       const service = createAuthService({
         emailOtps: {
           findLatestByEmail: async () => validOtpRecord,
-          markVerified: async () => { markedVerified = true; },
+          markVerified: async () => { markedVerified = true; return validOtpRecord; },
           incrementAttempt: async () => {},
         },
         users: {
@@ -138,7 +138,7 @@ describe("auth service (Passwordless Email OTP)", () => {
       const service = createAuthService({
         emailOtps: {
           findLatestByEmail: async () => validOtpRecord,
-          markVerified: async () => {},
+          markVerified: async () => validOtpRecord,
           incrementAttempt: async () => {},
         },
         users: {
@@ -157,6 +157,31 @@ describe("auth service (Passwordless Email OTP)", () => {
       assert.equal(res.user.user_id, "u1");
     });
 
+    test("rejects a valid OTP when the atomic mark-as-verified loses a race", async () => {
+      const validOtpRecord = {
+        email_otp_id: 1,
+        email: "user@example.com",
+        otp_hash: hashToken("654321"),
+        attempt_count: 0,
+        expired_at: new Date(Date.now() + 100000),
+        verified_at: null,
+      };
+
+      const service = createAuthService({
+        emailOtps: {
+          findLatestByEmail: async () => validOtpRecord,
+          markVerified: async () => null,
+        },
+        tokenOptions: baseOptions,
+        transaction,
+      });
+
+      await assert.rejects(
+        () => service.verifyOtp({ email: "user@example.com", otp: "654321" }),
+        (err) => err.statusCode === 401 && err.code === "INVALID_OTP",
+      );
+    });
+
     test("merges guest cart during verifyOtp if guest_token is provided", async () => {
       let mergedCart = false;
       const validOtpRecord = {
@@ -171,7 +196,7 @@ describe("auth service (Passwordless Email OTP)", () => {
       const service = createAuthService({
         emailOtps: {
           findLatestByEmail: async () => validOtpRecord,
-          markVerified: async () => {},
+          markVerified: async () => validOtpRecord,
           incrementAttempt: async () => {},
         },
         users: {
@@ -295,7 +320,7 @@ describe("auth service (Passwordless Email OTP)", () => {
             attempt_count: 0,
             expired_at: new Date(Date.now() + 100000),
           }),
-          markVerified: async () => {},
+          markVerified: async () => ({ email_otp_id: 1 }),
         },
         users: {
           findByEmail: async () => ({ ...baseUser, status: "blocked" }),
