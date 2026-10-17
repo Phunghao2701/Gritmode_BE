@@ -75,6 +75,8 @@ export const createPaymentController = ({
         phone: req.headers["x-guest-phone"] || req.body?.phone,
       };
       const actor = req.user ? { ...req.user, guestInfo } : guestInfo;
+      const detailToken = req.headers["x-order-detail-token"];
+      if (detailToken) actor.detailToken = detailToken;
       const result = toClientPayment(await payments.cancelPayOSPaymentLink(orderId, actor));
       return ok(res, result, { message: "Hủy link thanh toán thành công" });
     } catch (error) {

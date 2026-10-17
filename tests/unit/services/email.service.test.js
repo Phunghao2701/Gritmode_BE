@@ -49,6 +49,26 @@ describe("email service", () => {
     assert.equal(config.port, 587);
     assert.equal(config.secure, false);
     assert.equal(config.requireTLS, true);
+    assert.equal(config.tls.rejectUnauthorized, true);
+  });
+
+  test("allows an explicit SMTP TLS certificate opt-out only when configured", async () => {
+    let config;
+    const service = createEmailService({
+      env: {
+        EMAIL_PROVIDER: "smtp",
+        EMAIL_USER: "sender@example.com",
+        EMAIL_PASS: "app-password",
+        SMTP_TLS_REJECT_UNAUTHORIZED: "false",
+      },
+      transportFactory: (receivedConfig) => {
+        config = receivedConfig;
+        return { verify: async () => true };
+      },
+    });
+
+    await service.verifyConnection();
+    assert.equal(config.tls.rejectUnauthorized, false);
   });
 
   test("rejects missing OAuth configuration", async () => {

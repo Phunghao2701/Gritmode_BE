@@ -115,11 +115,18 @@ export const createOrderService = ({
             voucherCode = validatedVoucher.code_voucher;
             discountAmount = Number(voucherResult.discount_amount || 0);
 
-            // Increment voucher usage
-            if (vouchers.incrementUsage) {
-              await vouchers.incrementUsage(voucherId, client);
+            // Increment voucher usage atomically. A null result means another
+            // checkout consumed the final available usage after validation.
+            let incrementedVoucher = null;
+            if (vouchers.incrementVoucherUsage) {
+              incrementedVoucher = await vouchers.incrementVoucherUsage(voucherId, client);
+            } else if (vouchers.incrementUsage) {
+              incrementedVoucher = await vouchers.incrementUsage(voucherId, client);
             } else if (voucherRepo.incrementUsage) {
-              await voucherRepo.incrementUsage(voucherId, client);
+              incrementedVoucher = await voucherRepo.incrementUsage(voucherId, client);
+            }
+            if (!incrementedVoucher) {
+              throw conflict("VOUCHER_EXHAUSTED", "Mã giảm giá đã hết lượt sử dụng");
             }
           }
         }
@@ -234,6 +241,7 @@ export const createOrderService = ({
             paymentMethod: input.payment_method,
             total,
             detailToken,
+            deferProvider: input.payment_method === "payos",
           },
           client,
         );
@@ -270,6 +278,21 @@ export const createOrderService = ({
 
       const queuedNotifications = result.__queuedNotifications;
       delete result.__queuedNotifications;
+
+      // The order transaction is committed before contacting PayOS. This
+      // prevents a slow/unavailable provider from holding inventory and cart
+      // row locks open for the duration of the network request.
+      if (
+        input.payment_method === "payos"
+        && result.payment?.payment_method === "payos"
+        && typeof payments.finalizePayOSPayment === "function"
+      ) {
+        result.payment = await payments.finalizePayOSPayment({
+          order: result,
+          payment: result.payment,
+          detailToken: result.detail_token,
+        });
+      }
 
       if (queuedNotifications?.adminNotification) {
         realtime.publish({

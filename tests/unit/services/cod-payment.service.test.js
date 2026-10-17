@@ -228,6 +228,96 @@ describe("cod payment service", () => {
     assert.ok(createdData.checkout_url);
   });
 
+  test("defers the PayOS provider call when requested", async () => {
+    let providerCalls = 0;
+    let createdData = null;
+    const service = createPaymentService({
+      payments: {
+        createPayment: async (data) => {
+          createdData = data;
+          return { payment_id: 2, ...data };
+        },
+      },
+      payos: {
+        create: async () => {
+          providerCalls += 1;
+          return {};
+        },
+      },
+    });
+
+    const result = await service.createPayment({
+      order: sampleOrder,
+      paymentMethod: "payos",
+      total: 500000,
+      deferProvider: true,
+    });
+
+    assert.equal(providerCalls, 0);
+    assert.equal(result.payment_method, "payos");
+    assert.ok(createdData.payos_order_code);
+    assert.equal(createdData.checkout_url, undefined);
+  });
+
+  test("finalizes a deferred PayOS payment after the provider returns", async () => {
+    let updatedData = null;
+    const service = createPaymentService({
+      payments: {
+        updatePayOSPayment: async (paymentId, data) => {
+          updatedData = { paymentId, data };
+          return { payment_id: paymentId, payment_method: "payos", ...data };
+        },
+      },
+      payos: {
+        create: async (payload) => {
+          assert.equal(payload.orderCode, 123456);
+          return {
+            checkoutUrl: "https://payos.test/checkout",
+            qrCode: "000201010212",
+            paymentLinkId: "payment-link-1",
+          };
+        },
+      },
+    });
+
+    const result = await service.finalizePayOSPayment({
+      order: sampleOrder,
+      payment: { payment_id: 3, payment_method: "payos", payos_order_code: 123456, amount_payment: 500000 },
+    });
+
+    assert.equal(updatedData.paymentId, 3);
+    assert.equal(result.checkout_url, "https://payos.test/checkout");
+    assert.equal(result.qr_code, "000201010212");
+  });
+
+  test("keeps the payment pending when PayOS succeeded but persistence failed", async () => {
+    let markedExpired = false;
+    const service = createPaymentService({
+      payments: {
+        updatePayOSPayment: async () => null,
+        markPaymentExpired: async () => {
+          markedExpired = true;
+        },
+      },
+      payos: {
+        create: async () => ({
+          checkoutUrl: "https://payos.test/checkout",
+          qrCode: "000201010212",
+          paymentLinkId: "payment-link-1",
+        }),
+      },
+    });
+
+    await assert.rejects(
+      () => service.finalizePayOSPayment({
+        order: sampleOrder,
+        payment: { payment_id: 3, payment_method: "payos", payos_order_code: 123456, amount_payment: 500000 },
+      }),
+      (error) => error.code === "PAYOS_PAYMENT_PERSIST_FAILED" && error.statusCode === 503,
+    );
+    assert.equal(markedExpired, false);
+  });
+
   test("cancelCodPayment returns payment without modifying if payment is not pending cod", async () => {
     const paidCod = { payment_id: 1, order_id: 100, payment_method: "cod", status_payment: "paid" };
     const service = createPaymentService({

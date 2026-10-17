@@ -12,11 +12,11 @@ const { default: app } = await import("../../src/app.js");
 
 const secret = process.env.JWT_SECRET;
 const customerToken = createAccessToken(
-  { user_id: "11111111-1111-4111-8111-111111111111", role: "customer" },
+  { user_id: "11111111-1111-4111-8111-111111111111", role: "customer", session_id: 1 },
   { secret, expiresIn: "1h" },
 );
 const adminToken = createAccessToken(
-  { user_id: "22222222-2222-4222-8222-222222222222", role: "admin" },
+  { user_id: "22222222-2222-4222-8222-222222222222", role: "admin", session_id: 2 },
   { secret, expiresIn: "1h" },
 );
 

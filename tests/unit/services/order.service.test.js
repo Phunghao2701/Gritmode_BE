@@ -159,7 +159,7 @@ describe("order service", () => {
           voucher: { voucher_id: 5, code_voucher: "SALE100" },
           discount_amount: 100000,
         }),
-        incrementUsage: async (id) => { incrementedVoucherId = id; },
+        incrementUsage: async (id) => { incrementedVoucherId = id; return { voucher_id: id }; },
       },
       orders: {
         createOrder: async (data) => ({ order_id: 1003, ...data }),
@@ -192,6 +192,31 @@ describe("order service", () => {
     assert.equal(result.shipping_fee_order, 0);
     assert.equal(result.total_order, 900000);
     assert.equal(incrementedVoucherId, 5);
+  });
+
+  test("rejects checkout when voucher usage is exhausted during the transaction", async () => {
+    const service = createOrderService({
+      carts: {
+        findActiveByOwner: async () => sampleCart,
+        getDetailedItems: async () => sampleCartItems,
+      },
+      inventories: {
+        lockStockByVariantId: async () => ({ quantity_available: 10 }),
+      },
+      vouchers: {
+        validateVoucher: async () => ({
+          voucher: { voucher_id: 5, code_voucher: "SALE100" },
+          discount_amount: 100000,
+        }),
+        incrementUsage: async () => null,
+      },
+      transaction,
+    });
+
+    await assert.rejects(
+      () => service.createOrder({ payment_method: "cod", voucher_code: "SALE100" }, { owner: { type: "user", userId: "u1" } }),
+      (err) => err.statusCode === 409 && err.code === "VOUCHER_EXHAUSTED",
+    );
   });
 
   test("rejects checkout when cart is empty or missing", async () => {

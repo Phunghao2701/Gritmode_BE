@@ -74,9 +74,9 @@ export const sessionRepository = {
        SET refresh_token_hash=$2, expired_at=$3,
            user_agent=COALESCE($4, user_agent), ip_address=COALESCE($5, ip_address),
            updated_at=NOW()
-       WHERE user_session_id=$1 AND refresh_token_hash=$2 AND revoked_at IS NULL AND expired_at > NOW()
+       WHERE user_session_id=$1 AND refresh_token_hash=$6 AND revoked_at IS NULL AND expired_at > NOW()
        RETURNING user_session_id, user_id, user_agent, ip_address, expired_at, created_at, revoked_at`,
-      [sessionId, currentHash, newHash, newExpiresAt, userAgent || null, ipAddress || null],
+      [sessionId, newHash, newExpiresAt, userAgent || null, ipAddress || null, currentHash],
     );
     return rows[0] || null;
   },

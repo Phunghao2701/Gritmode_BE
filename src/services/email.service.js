@@ -185,7 +185,8 @@ export const createEmailService = ({
         },
       tls: {
         servername: env.SMTP_TLS_SERVERNAME || smtpHost,
-        rejectUnauthorized: false,
+        rejectUnauthorized: String(env.SMTP_TLS_REJECT_UNAUTHORIZED ?? "true").trim().toLowerCase() !== "false",
+        ...(env.SMTP_TLS_CA ? { ca: env.SMTP_TLS_CA } : {}),
       },
       connectionTimeout: 10000,
       greetingTimeout: 10000,

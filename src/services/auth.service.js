@@ -128,7 +128,10 @@ export const createAuthService = ({
         throw unauthorized("INVALID_OTP", "Mã OTP không hợp lệ hoặc đã hết hạn");
       }
 
-      await emailOtps.markVerified(latestOtp.email_otp_id);
+      const markedOtp = await emailOtps.markVerified(latestOtp.email_otp_id);
+      if (!markedOtp) {
+        throw unauthorized("INVALID_OTP", "Mã OTP không hợp lệ hoặc đã hết hạn");
+      }
 
       let user = await users.findByEmail(email);
       let isNewUser = false;

@@ -135,6 +135,14 @@ describe("order checkout HTTP contract", () => {
       checkout_url: "https://pay.payos.vn/123",
       qr_code: "QR123",
     }));
+    mock.method(paymentRepository, "updatePayOSPayment", async (paymentId, data) => ({
+      payment_id: paymentId,
+      payment_method: "payos",
+      status_payment: "pending",
+      amount_payment: 500000,
+      payos_order_code: 1002,
+      ...data,
+    }));
     mock.method(cartRepository, "updateStatus", async () => ({}));
 
     const res = await request(app)
