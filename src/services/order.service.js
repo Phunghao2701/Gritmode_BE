@@ -11,6 +11,7 @@ import { withTransaction } from "../config/database.js";
 import { emailService } from "./email.service.js";
 import { notificationOutboxService } from "./notification-outbox.service.js";
 import { realtimeBus } from "./realtime-bus.service.js";
+import { refundService } from "./refund.service.js";
 import logger from "../utils/logger.js";
 import {
   createOrderDetailToken,
@@ -31,6 +32,7 @@ export const createOrderService = ({
   emails = emailService,
   notifications = null,
   realtime = realtimeBus,
+  refunds = null,
   transaction = withTransaction,
 } = {}) => {
   const generateOrderCode = () => {
@@ -312,14 +314,20 @@ export const createOrderService = ({
     /**
      * Get list of orders for authenticated user
      */
-    async getUserOrders(userId, query = {}) {
+    async getUserOrders(userId, query = {}, userEmail = null) {
       const page = Number(query.page) || 1;
       const limit = Number(query.limit) || 10;
       const status_order = query.status_order;
+      const orderFilter = { userId, status_order, page, limit };
+      const countFilter = { userId, status_order };
+      if (userEmail) {
+        orderFilter.userEmail = userEmail;
+        countFilter.userEmail = userEmail;
+      }
 
       const [items, total] = await Promise.all([
-        orders.findUserOrders({ userId, status_order, page, limit }),
-        orders.countUserOrders({ userId, status_order }),
+        orders.findUserOrders(orderFilter),
+        orders.countUserOrders(countFilter),
       ]);
 
       const totalPages = Math.ceil(total / limit) || 1;
@@ -335,6 +343,7 @@ export const createOrderService = ({
           total_order: Number(o.total_order),
           payment_method: o.payment_method || null,
           status_payment: o.status_payment || null,
+          refund_status: o.refund_status || null,
           created_at: o.created_at,
         })),
         pagination: {
@@ -349,18 +358,21 @@ export const createOrderService = ({
     /**
      * Get order detail for authenticated user or guest confirmation
      */
-    async getUserOrderById(orderId, userId) {
+    async getUserOrderById(orderId, userId, userEmail = null) {
       if (!userId) {
         throw new AppError(404, "ORDER_NOT_FOUND", "Order not found");
       }
-      const order = await orders.findUserOrderById(orderId, userId);
+      const order = await orders.findUserOrderById(orderId, userId, userEmail);
       if (!order) {
         throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
       }
-      if (order.user_id && userId && order.user_id !== userId) {
+      if (
+        order.user_id && userId && String(order.user_id) !== String(userId)
+        && String(order.email_order || "").trim().toLowerCase() !== String(userEmail || "").trim().toLowerCase()
+      ) {
         throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
       }
-      return order;
+      return refunds?.attachRefundRequest ? refunds.attachRefundRequest(order) : order;
     },
 
     /**
@@ -376,7 +388,7 @@ export const createOrderService = ({
       if (!order || order.order_code !== access.orderCode) {
         throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
       }
-      return order;
+      return refunds?.attachRefundRequest ? refunds.attachRefundRequest(order) : order;
     },
 
     /**
@@ -410,8 +422,8 @@ export const createOrderService = ({
     /**
      * Cancel order for authenticated user
      */
-    async cancelUserOrder(orderId, userId) {
-      const order = await orders.findUserOrderById(orderId, userId);
+    async cancelUserOrder(orderId, userId, userEmail = null) {
+      const order = await orders.findUserOrderById(orderId, userId, userEmail);
       if (!order) {
         throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
       }
@@ -429,7 +441,7 @@ export const createOrderService = ({
           throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
         }
 
-        const currentOrder = await orders.findUserOrderById(orderId, userId, client);
+        const currentOrder = await orders.findUserOrderById(orderId, userId, userEmail, client);
         if (!currentOrder) {
           throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
         }
@@ -550,7 +562,10 @@ export const createOrderService = ({
   };
 };
 
-const defaultOrderService = createOrderService({ notifications: notificationOutboxService });
+const defaultOrderService = createOrderService({
+  notifications: notificationOutboxService,
+  refunds: refundService,
+});
 export const orderService = defaultOrderService;
 export const {
   createOrder,

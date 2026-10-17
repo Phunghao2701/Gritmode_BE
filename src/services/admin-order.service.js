@@ -5,6 +5,7 @@ import { paymentRepository } from "../repositories/payment.repository.js";
 import { auditRepository } from "../repositories/audit.repository.js";
 import { withTransaction } from "../config/database.js";
 import { realtimeBus } from "./realtime-bus.service.js";
+import { refundService } from "./refund.service.js";
 
 export const createAdminOrderService = ({
   orders = orderRepository,
@@ -12,6 +13,7 @@ export const createAdminOrderService = ({
   payments = paymentRepository,
   audits = auditRepository,
   realtime = realtimeBus,
+  refunds = null,
   transaction = withTransaction,
 } = {}) => {
   const publishOrderUpdated = (order, previousStatus) => {
@@ -69,6 +71,7 @@ export const createAdminOrderService = ({
           total_order: Number(o.total_order),
           payment_method: o.payment_method || null,
           status_payment: o.status_payment || null,
+          refund_status: o.refund_status || null,
           created_at: o.created_at,
           updated_at: o.updated_at,
         })),
@@ -89,7 +92,7 @@ export const createAdminOrderService = ({
       if (!order) {
         throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
       }
-      return order;
+      return refunds?.attachRefundRequest ? refunds.attachRefundRequest(order) : order;
     },
 
     /**
@@ -339,11 +342,15 @@ export const createAdminOrderService = ({
         }
 
         const payment = await getOrderPayment(order, orderId, client);
+        let refundRequest = null;
         if (payment?.payment_method === "payos" && payment?.status_payment === "paid") {
-          throw conflict(
-            "PAID_ORDER_CANNOT_BE_DIRECTLY_CANCELLED",
-            "Đơn hàng đã thanh toán trực tuyến không thể hủy trực tiếp, vui lòng thực hiện quy trình hoàn tiền",
-          );
+          refundRequest = await refunds.createAdminCancellationRefundRequest({
+            order,
+            payment,
+            adminUserId,
+            reason: reason || "Admin hủy đơn; cần xử lý hoàn tiền thủ công",
+            client,
+          });
         }
 
         // 1. Release inventory reservation (reserved -= qty)
@@ -381,6 +388,8 @@ export const createAdminOrderService = ({
           ...updated,
           order_id: Number(updated.order_id),
           status_order: "cancelled",
+          refund_required: Boolean(refundRequest),
+          refund_request: refundRequest,
         };
       });
 
@@ -390,7 +399,7 @@ export const createAdminOrderService = ({
   };
 };
 
-const defaultAdminOrderService = createAdminOrderService();
+const defaultAdminOrderService = createAdminOrderService({ refunds: refundService });
 export const adminOrderService = defaultAdminOrderService;
 export const {
   getOrders,

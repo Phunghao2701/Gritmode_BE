@@ -2509,6 +2509,29 @@ export const validateGuestOrderCancel = (input = {}) => {
     };
 };
 
+export const validateGuestRefundRequest = (input = {}) => {
+    const base = validateGuestOrderCancel(input);
+    const errors = [...(base.errors || [])];
+    let reason;
+
+    if (input.reason !== undefined && input.reason !== null) {
+        if (typeof input.reason !== 'string' || input.reason.trim().length > 1000) {
+            errors.push({ field: 'reason', message: 'Lý do hoàn tiền không được vượt quá 1000 ký tự' });
+        } else {
+            reason = input.reason.trim();
+        }
+    }
+
+    if (errors.length) return { ok: false, errors };
+    return {
+        ok: true,
+        value: {
+            ...base.value,
+            reason,
+        },
+    };
+};
+
 const CONTACT_TOPIC_VALUES = ['order_support', 'size_advice', 'product_feedback', 'product_question', 'partnership', 'other'];
 
 export const validateContactMessage = (input = {}) => {
@@ -2692,6 +2715,50 @@ export const validateCancelOrder = (input = {}) => {
 
     if (errors.length) return { ok: false, errors };
     return { ok: true, value: { reason } };
+};
+
+export const validateRefundRequest = (input = {}) => {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        return { ok: false, errors: [{ field: 'body', message: 'Dữ liệu không hợp lệ' }] };
+    }
+
+    if (input.reason !== undefined && input.reason !== null && typeof input.reason !== 'string') {
+        return { ok: false, errors: [{ field: 'reason', message: 'Lý do hoàn tiền không hợp lệ' }] };
+    }
+
+    if (typeof input.reason === 'string' && input.reason.trim().length > 1000) {
+        return { ok: false, errors: [{ field: 'reason', message: 'Lý do hoàn tiền không được vượt quá 1000 ký tự' }] };
+    }
+
+    return { ok: true, value: { reason: typeof input.reason === 'string' ? input.reason.trim() : undefined } };
+};
+
+export const validateCompleteRefund = (input = {}) => {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        return { ok: false, errors: [{ field: 'body', message: 'Dữ liệu không hợp lệ' }] };
+    }
+
+    const providerReference = input.provider_reference;
+    const adminNote = input.admin_note;
+    const errors = [];
+
+    if (providerReference !== undefined && providerReference !== null
+      && (typeof providerReference !== 'string' || providerReference.trim().length > 255)) {
+        errors.push({ field: 'provider_reference', message: 'Mã giao dịch hoàn tiền không hợp lệ' });
+    }
+    if (adminNote !== undefined && adminNote !== null
+      && (typeof adminNote !== 'string' || adminNote.trim().length > 2000)) {
+        errors.push({ field: 'admin_note', message: 'Ghi chú xử lý không được vượt quá 2000 ký tự' });
+    }
+
+    if (errors.length) return { ok: false, errors };
+    return {
+        ok: true,
+        value: {
+            provider_reference: typeof providerReference === 'string' ? providerReference.trim() : undefined,
+            admin_note: typeof adminNote === 'string' ? adminNote.trim() : undefined,
+        },
+    };
 };
 
 export const validateCreatePayOSPayment = (input = {}) => {

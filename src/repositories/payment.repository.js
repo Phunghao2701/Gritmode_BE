@@ -218,6 +218,21 @@ export const paymentRepository = {
     const { rows } = await runner(client).query(query, [paymentId]);
     return rows[0] || null;
   },
+
+  async markRefunded(paymentId, { providerReference = null } = {}, client) {
+    const query = `
+      UPDATE payment
+      SET status_payment = 'refunded',
+          payos_transaction_reference = COALESCE($2, payos_transaction_reference),
+          updated_at = NOW()
+      WHERE payment_id = $1
+        AND payment_method = 'payos'
+        AND status_payment = 'paid'
+      RETURNING ${paymentColumns}
+    `;
+    const { rows } = await runner(client).query(query, [paymentId, providerReference || null]);
+    return rows[0] || null;
+  },
 };
 
 

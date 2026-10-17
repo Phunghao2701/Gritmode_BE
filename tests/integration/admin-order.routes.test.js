@@ -8,6 +8,7 @@ import { orderRepository } from "../../src/repositories/order.repository.js";
 import { inventoryRepository } from "../../src/repositories/inventory.repository.js";
 import { paymentRepository } from "../../src/repositories/payment.repository.js";
 import { auditRepository } from "../../src/repositories/audit.repository.js";
+import { refundRequestRepository } from "../../src/repositories/refund-request.repository.js";
 
 process.env.JWT_SECRET ||= "integration-test-secret";
 const { default: app } = await import("../../src/app.js");
@@ -53,6 +54,7 @@ describe("admin order management HTTP contract", () => {
       role: id === "00000000-0000-4000-8000-000000000001" ? "admin" : "customer",
       status: "active",
     }));
+    mock.method(refundRequestRepository, "findByOrderId", async () => null);
   });
 
   afterEach(() => {

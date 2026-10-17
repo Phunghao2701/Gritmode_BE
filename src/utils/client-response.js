@@ -31,10 +31,23 @@ export const toClientPayment = (payment) => {
   return clientPayment;
 };
 
+export const toClientRefundRequest = (request) => {
+  if (!request || typeof request !== "object") return null;
+  return {
+    refund_request_id: request.refund_request_id ?? null,
+    order_id: request.order_id ?? null,
+    reason: request.reason || null,
+    status_refund_request: request.status_refund_request || null,
+    requested_at: request.requested_at || null,
+    processed_at: request.processed_at || null,
+  };
+};
+
 export const toClientOrder = (order) => {
   if (!order || typeof order !== "object") return order;
   return {
     ...order,
     payment: toClientPayment(order.payment),
+    refund_request: toClientRefundRequest(order.refund_request),
   };
 };
