@@ -57,7 +57,7 @@ describe("product HTTP contract", () => {
     assert.equal(res.body.success, true);
     assert.equal(res.body.data.items.length, 1);
     assert.equal(res.body.data.pagination.total, 1);
-    assert.match(res.headers["cache-control"], /^public, max-age=/);
+    assert.equal(res.headers["cache-control"], "no-store, max-age=0");
   });
 
   test("public product listing validates query parameters", async () => {
@@ -68,10 +68,11 @@ describe("product HTTP contract", () => {
 
   test("public product detail validates ID and returns not found for missing", async () => {
     mock.method(productRepository, "findDetail", async () => null);
+    mock.method(productRepository, "findBySlug", async () => null);
 
     const invalidIdRes = await request(app).get("/api/v1/products/invalid");
-    assert.equal(invalidIdRes.status, 400);
-    assert.equal(invalidIdRes.body.code, "INVALID_ID");
+    assert.equal(invalidIdRes.status, 404);
+    assert.equal(invalidIdRes.body.code, "PRODUCT_NOT_FOUND");
 
     const notFoundRes = await request(app).get("/api/v1/products/999");
     assert.equal(notFoundRes.status, 404);

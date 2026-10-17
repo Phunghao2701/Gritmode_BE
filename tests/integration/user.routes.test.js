@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, mock, test } from "node:test";
 import assert from "node:assert/strict";
 import request from "supertest";
-import bcrypt from "bcryptjs";
 import pool from "../../src/config/database.js";
 import { createAccessToken } from "../../src/utils/tokens.js";
 import { userRepository } from "../../src/repositories/user.repository.js";
@@ -33,7 +32,7 @@ describe("user & address HTTP contract", () => {
       status: "active",
       email: "user@example.com",
       type: "local",
-      password: bcrypt.hashSync("OldStrongPassword!123", 10),
+      password: "legacy-password-hash",
     }));
   });
 

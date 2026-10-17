@@ -9,6 +9,7 @@ import { inventoryRepository } from "../../src/repositories/inventory.repository
 import { orderRepository } from "../../src/repositories/order.repository.js";
 import { paymentRepository } from "../../src/repositories/payment.repository.js";
 import { auditRepository } from "../../src/repositories/audit.repository.js";
+import { emailService } from "../../src/services/email.service.js";
 
 process.env.JWT_SECRET ||= "integration-test-secret";
 const { default: app } = await import("../../src/app.js");
@@ -31,6 +32,7 @@ describe("COD payment integration flow", () => {
       role: id === "00000000-0000-4000-8000-000000000001" ? "admin" : "customer",
       status: "active",
     }));
+    mock.method(emailService, "sendOrderConfirmationEmail", async () => undefined);
   });
 
   afterEach(() => {
@@ -53,7 +55,11 @@ describe("COD payment integration flow", () => {
     ]);
     mock.method(inventoryRepository, "lockStockByVariantId", async () => ({ quantity_available: 10 }));
     mock.method(inventoryRepository, "reserveStock", async () => ({ quantity_stock: 10, quantity_reserved: 2, quantity_available: 8 }));
-    mock.method(orderRepository, "createOrder", async (data) => ({ order_id: 101, ...data }));
+    mock.method(orderRepository, "createOrder", async (data) => ({
+      order_id: 101,
+      created_at: new Date().toISOString(),
+      ...data,
+    }));
     mock.method(orderRepository, "createOrderItems", async (items) => items);
     mock.method(orderRepository, "createOrderAddress", async (addr) => addr);
     mock.method(cartRepository, "updateStatus", async () => ({}));

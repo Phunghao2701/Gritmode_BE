@@ -157,8 +157,21 @@ describe("authentication HTTP contract (Passwordless Email OTP)", () => {
         }
         return null;
       });
+      mock.method(sessionRepository, "findActiveByHashWithUser", async (hash) => {
+        if (hash !== hashToken(rawRefreshToken)) return null;
+        return {
+          session: { user_session_id: 1, user_id: "00000000-0000-4000-8000-000000000001" },
+          user: {
+            user_id: "00000000-0000-4000-8000-000000000001",
+            email: "user@example.com",
+            role: "customer",
+            status: "active",
+          },
+        };
+      });
       mock.method(sessionRepository, "revoke", async () => ({}));
       mock.method(sessionRepository, "create", async () => ({ user_session_id: 2 }));
+      mock.method(sessionRepository, "rotate", async () => ({ user_session_id: 1 }));
 
       const res = await request(app)
         .post("/api/v1/auth/refresh")

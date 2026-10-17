@@ -67,6 +67,8 @@ describe("order management repository extensions", () => {
     assert.equal(res.order_id, 100);
     assert.equal(res.items.length, 1);
     assert.equal(res.address.receiver_name_order_address, "Nguyen Van A");
+    const paymentQuery = mockClient.query.mock.calls.find((call) => call.arguments[0].includes("FROM payment"));
+    assert.match(paymentQuery?.arguments[0] || "", /ORDER BY created_at DESC, payment_id DESC LIMIT 1/);
   });
 
   test("findGuestOrder returns guest order matching 3 verification fields", async () => {

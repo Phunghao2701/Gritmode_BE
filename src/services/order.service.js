@@ -257,6 +257,7 @@ export const createOrderService = ({
 
         return {
           ...createdResult,
+          detail_token: owner.type === "guest" ? createOrderDetailToken(createdResult) : undefined,
           __queuedNotifications: queuedNotifications,
         };
       });
@@ -319,12 +320,11 @@ export const createOrderService = ({
     /**
      * Get order detail for authenticated user or guest confirmation
      */
-    async getUserOrderById(orderId, userId = null) {
-      if (userId) {
-        const order = await orders.findUserOrderById(orderId, userId);
-        if (order) return order;
+    async getUserOrderById(orderId, userId) {
+      if (!userId) {
+        throw new AppError(404, "ORDER_NOT_FOUND", "Order not found");
       }
-      const order = await orders.findAdminOrderById(orderId);
+      const order = await orders.findUserOrderById(orderId, userId);
       if (!order) {
         throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
       }
