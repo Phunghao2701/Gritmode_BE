@@ -15,6 +15,7 @@ export const createOrderController = ({
       const context = {
         owner: req.cartOwner,
         user: req.user || null,
+        persistCheckoutContact: true,
       };
       const result = toClientOrder(await orders.createOrder(payload, context));
       return ok(res, result, {
@@ -34,7 +35,7 @@ export const createOrderController = ({
   getMyOrders: async (req, res, next) => {
     try {
       const query = req.validatedQuery || req.query;
-      const result = await orders.getUserOrders(req.user.user_id, query);
+      const result = await orders.getUserOrders(req.user.user_id, query, req.user.email);
       return ok(res, result, { message: "Lấy danh sách đơn hàng thành công" });
     } catch (error) {
       logger.error("[order] getMyOrders error:", error);
@@ -48,7 +49,11 @@ export const createOrderController = ({
   getMyOrderById: async (req, res, next) => {
     try {
       const orderId = req.validatedParams ? req.validatedParams.orderId : req.params.orderId;
-      const result = toClientOrder(await orders.getUserOrderById(orderId, req.user?.user_id || null));
+      const result = toClientOrder(await orders.getUserOrderById(
+        orderId,
+        req.user?.user_id || null,
+        req.user?.email || null,
+      ));
       return ok(res, result, { message: "Lấy chi tiết đơn hàng thành công" });
     } catch (error) {
       logger.error("[order] getMyOrderById error:", error);
@@ -93,7 +98,7 @@ export const createOrderController = ({
   cancelMyOrder: async (req, res, next) => {
     try {
       const orderId = req.validatedParams ? req.validatedParams.orderId : req.params.orderId;
-      const result = await orders.cancelUserOrder(orderId, req.user.user_id);
+      const result = await orders.cancelUserOrder(orderId, req.user.user_id, req.user.email);
       return ok(res, result, { message: "Hủy đơn hàng thành công" });
     } catch (error) {
       logger.error("[order] cancelMyOrder error:", error);

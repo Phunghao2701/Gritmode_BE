@@ -10,6 +10,28 @@ import logger from "../utils/logger.js";
 const memCacheProducts = new Map();
 const MEM_TTL_PRODUCT_DETAIL = 10 * 60 * 1000; // 10 minutes
 const MEM_TTL_PRODUCT_LIST = 5 * 60 * 1000; // 5 minutes
+const MEM_CACHE_MAX_ENTRIES = 200;
+
+const setProductMemoryCache = (key, data, expiry) => {
+  if (memCacheProducts.has(key)) memCacheProducts.delete(key);
+  while (memCacheProducts.size >= MEM_CACHE_MAX_ENTRIES) {
+    memCacheProducts.delete(memCacheProducts.keys().next().value);
+  }
+  memCacheProducts.set(key, { data, expiry });
+};
+
+const getProductMemoryCache = (key, now = Date.now()) => {
+  const entry = memCacheProducts.get(key);
+  if (!entry) return null;
+  if (entry.expiry <= now) {
+    memCacheProducts.delete(key);
+    return null;
+  }
+  // Refresh insertion order so frequently-used entries survive the cap.
+  memCacheProducts.delete(key);
+  memCacheProducts.set(key, entry);
+  return entry;
+};
 
 export const clearProductMemoryCache = () => {
   memCacheProducts.clear();
@@ -57,7 +79,7 @@ export const createProductController = ({ service = productService } = {}) => ({
       const query = req.validatedQuery || req.query || {};
       const cacheKey = `products:list:${JSON.stringify(query)}`;
       const now = Date.now();
-      const memHit = memCacheProducts.get(cacheKey);
+      const memHit = getProductMemoryCache(cacheKey, now);
       if (memHit && memHit.expiry > now) {
         res.setHeader("X-Cache", "MEM-HIT");
         res.setHeader("Cache-Control", "no-store, max-age=0");
@@ -70,7 +92,7 @@ export const createProductController = ({ service = productService } = {}) => ({
       }, 900);
 
       if (data) {
-        memCacheProducts.set(cacheKey, { data, expiry: now + MEM_TTL_PRODUCT_LIST });
+        setProductMemoryCache(cacheKey, data, now + MEM_TTL_PRODUCT_LIST);
       }
 
       if (isCached) res.setHeader("X-Cache", "HIT");
@@ -98,7 +120,7 @@ export const createProductController = ({ service = productService } = {}) => ({
       const identifier = req.params.productId;
       const cacheKey = `products:detail:${identifier}`;
       const now = Date.now();
-      const memHit = memCacheProducts.get(cacheKey);
+      const memHit = getProductMemoryCache(cacheKey, now);
       if (memHit && memHit.expiry > now) {
         res.setHeader("X-Cache", "MEM-HIT");
         res.setHeader("Cache-Control", "no-store");
@@ -114,12 +136,12 @@ export const createProductController = ({ service = productService } = {}) => ({
       }, 1800);
 
       if (data) {
-        memCacheProducts.set(cacheKey, { data, expiry: now + MEM_TTL_PRODUCT_DETAIL });
+        setProductMemoryCache(cacheKey, data, now + MEM_TTL_PRODUCT_DETAIL);
         if (data.product_id && String(data.product_id) !== String(identifier)) {
-          memCacheProducts.set(`products:detail:${data.product_id}`, { data, expiry: now + MEM_TTL_PRODUCT_DETAIL });
+          setProductMemoryCache(`products:detail:${data.product_id}`, data, now + MEM_TTL_PRODUCT_DETAIL);
         }
         if (data.slug_product && data.slug_product !== identifier) {
-          memCacheProducts.set(`products:detail:${data.slug_product}`, { data, expiry: now + MEM_TTL_PRODUCT_DETAIL });
+          setProductMemoryCache(`products:detail:${data.slug_product}`, data, now + MEM_TTL_PRODUCT_DETAIL);
         }
       }
 

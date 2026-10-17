@@ -4,6 +4,7 @@ import { cartRepository } from "../repositories/cart.repository.js";
 import { inventoryRepository } from "../repositories/inventory.repository.js";
 import { orderRepository } from "../repositories/order.repository.js";
 import { addressRepository } from "../repositories/address.repository.js";
+import { userRepository } from "../repositories/user.repository.js";
 import { voucherRepository } from "../repositories/voucher.repository.js";
 import { voucherService } from "./voucher.service.js";
 import { paymentService } from "./payment.service.js";
@@ -11,6 +12,7 @@ import { withTransaction } from "../config/database.js";
 import { emailService } from "./email.service.js";
 import { notificationOutboxService } from "./notification-outbox.service.js";
 import { realtimeBus } from "./realtime-bus.service.js";
+import { refundService } from "./refund.service.js";
 import logger from "../utils/logger.js";
 import {
   createOrderDetailToken,
@@ -25,12 +27,14 @@ export const createOrderService = ({
   inventories = inventoryRepository,
   orders = orderRepository,
   addresses = addressRepository,
+  users = userRepository,
   vouchers = voucherService,
   voucherRepo = voucherRepository,
   payments = paymentService,
   emails = emailService,
   notifications = null,
   realtime = realtimeBus,
+  refunds = null,
   transaction = withTransaction,
 } = {}) => {
   const generateOrderCode = () => {
@@ -50,7 +54,9 @@ export const createOrderService = ({
 
       const result = await transaction(async (client) => {
         // 1. Find active cart
-        const cart = await carts.findActiveByOwner(owner, client);
+        const cart = carts.lockActiveByOwner
+          ? await carts.lockActiveByOwner(owner, client)
+          : await carts.findActiveByOwner(owner, client);
         if (!cart || cart.status_cart !== "active") {
           throw notFound("CART_NOT_FOUND", "Không tìm thấy giỏ hàng khả dụng để đặt hàng");
         }
@@ -99,24 +105,32 @@ export const createOrderService = ({
         let discountAmount = 0;
 
         if (input.voucher_code) {
-          const voucherResult = await vouchers.validateVoucher(
-            {
-              code_voucher: input.voucher_code,
-              cart: { items: cartItems, subtotal },
-            },
-            { client },
-          );
+          const voucherResult = vouchers.validateVoucherForCart
+            ? await vouchers.validateVoucherForCart({
+              cart: { items: cartItems, summary: { subtotal } },
+              codeVoucher: input.voucher_code,
+              client,
+            })
+            : await vouchers.validateVoucher(owner, input.voucher_code);
+          const validatedVoucher = voucherResult?.voucher || voucherResult;
 
-          if (voucherResult && voucherResult.voucher) {
-            voucherId = voucherResult.voucher.voucher_id;
-            voucherCode = voucherResult.voucher.code_voucher;
+          if (validatedVoucher?.voucher_id) {
+            voucherId = validatedVoucher.voucher_id;
+            voucherCode = validatedVoucher.code_voucher;
             discountAmount = Number(voucherResult.discount_amount || 0);
 
-            // Increment voucher usage
-            if (vouchers.incrementUsage) {
-              await vouchers.incrementUsage(voucherId, client);
+            // Increment voucher usage atomically. A null result means another
+            // checkout consumed the final available usage after validation.
+            let incrementedVoucher = null;
+            if (vouchers.incrementVoucherUsage) {
+              incrementedVoucher = await vouchers.incrementVoucherUsage(voucherId, client);
+            } else if (vouchers.incrementUsage) {
+              incrementedVoucher = await vouchers.incrementUsage(voucherId, client);
             } else if (voucherRepo.incrementUsage) {
-              await voucherRepo.incrementUsage(voucherId, client);
+              incrementedVoucher = await voucherRepo.incrementUsage(voucherId, client);
+            }
+            if (!incrementedVoucher) {
+              throw conflict("VOUCHER_EXHAUSTED", "Mã giảm giá đã hết lượt sử dụng");
             }
           }
         }
@@ -157,6 +171,55 @@ export const createOrderService = ({
             communeCode = savedAddr.commune_code || communeCode;
             administrativeDatasetId = savedAddr.administrative_dataset_id || administrativeDatasetId;
             phoneOrder = phoneOrder || phoneAddress;
+          }
+        }
+
+        // Keep the signed-in customer's profile useful after checkout. The
+        // checkout form can contain a new address instead of a saved one, so
+        // persist it once and avoid duplicates on later orders.
+        if (context.user && context.persistCheckoutContact) {
+          if (
+            phoneOrder
+            && users?.updateProfile
+            && String(phoneOrder) !== String(context.user.phone || "")
+          ) {
+            await users.updateProfile(context.user.user_id, { phone: phoneOrder }, client);
+          }
+
+          const hasNewAddress = Boolean(receiverName && phoneAddress && addressLine);
+          if (!input.user_address_id && hasNewAddress && addresses?.create) {
+            const existingAddress = addresses.findMatching
+              ? await addresses.findMatching(context.user.user_id, {
+                receiverName,
+                phone: phoneAddress,
+                addressLine,
+                ward,
+                district,
+                province,
+              }, client)
+              : null;
+
+            if (!existingAddress) {
+              const addressCount = addresses.countByUser
+                ? await addresses.countByUser(context.user.user_id, client)
+                : 0;
+              const isDefault = addressCount === 0;
+              if (isDefault && addresses.unsetDefault) {
+                await addresses.unsetDefault(context.user.user_id, client);
+              }
+              await addresses.create(context.user.user_id, {
+                receiver_name_user_address: receiverName,
+                phone_user_address: phoneAddress,
+                address_line_user_address: addressLine,
+                ward_user_address: ward,
+                district_user_address: district,
+                province_user_address: province,
+                province_code: provinceCode || null,
+                commune_code: communeCode || null,
+                administrative_dataset_id: administrativeDatasetId || null,
+                is_default: isDefault,
+              }, client);
+            }
           }
         }
 
@@ -222,12 +285,16 @@ export const createOrderService = ({
           await inventories.reserveStock(item.product_variant_id, qty, client);
         }
 
+        const detailToken = owner.type === "guest" ? createOrderDetailToken(createdOrder) : null;
+
         // 12. Create Payment
         const paymentResult = await payments.createPayment(
           {
             order: createdOrder,
             paymentMethod: input.payment_method,
             total,
+            detailToken,
+            deferProvider: input.payment_method === "payos",
           },
           client,
         );
@@ -257,13 +324,28 @@ export const createOrderService = ({
 
         return {
           ...createdResult,
-          detail_token: owner.type === "guest" ? createOrderDetailToken(createdResult) : undefined,
+          detail_token: detailToken || undefined,
           __queuedNotifications: queuedNotifications,
         };
       });
 
       const queuedNotifications = result.__queuedNotifications;
       delete result.__queuedNotifications;
+
+      // The order transaction is committed before contacting PayOS. This
+      // prevents a slow/unavailable provider from holding inventory and cart
+      // row locks open for the duration of the network request.
+      if (
+        input.payment_method === "payos"
+        && result.payment?.payment_method === "payos"
+        && typeof payments.finalizePayOSPayment === "function"
+      ) {
+        result.payment = await payments.finalizePayOSPayment({
+          order: result,
+          payment: result.payment,
+          detailToken: result.detail_token,
+        });
+      }
 
       if (queuedNotifications?.adminNotification) {
         realtime.publish({
@@ -283,14 +365,20 @@ export const createOrderService = ({
     /**
      * Get list of orders for authenticated user
      */
-    async getUserOrders(userId, query = {}) {
+    async getUserOrders(userId, query = {}, userEmail = null) {
       const page = Number(query.page) || 1;
       const limit = Number(query.limit) || 10;
       const status_order = query.status_order;
+      const orderFilter = { userId, status_order, page, limit };
+      const countFilter = { userId, status_order };
+      if (userEmail) {
+        orderFilter.userEmail = userEmail;
+        countFilter.userEmail = userEmail;
+      }
 
       const [items, total] = await Promise.all([
-        orders.findUserOrders({ userId, status_order, page, limit }),
-        orders.countUserOrders({ userId, status_order }),
+        orders.findUserOrders(orderFilter),
+        orders.countUserOrders(countFilter),
       ]);
 
       const totalPages = Math.ceil(total / limit) || 1;
@@ -306,6 +394,7 @@ export const createOrderService = ({
           total_order: Number(o.total_order),
           payment_method: o.payment_method || null,
           status_payment: o.status_payment || null,
+          refund_status: o.refund_status || null,
           created_at: o.created_at,
         })),
         pagination: {
@@ -320,18 +409,21 @@ export const createOrderService = ({
     /**
      * Get order detail for authenticated user or guest confirmation
      */
-    async getUserOrderById(orderId, userId) {
+    async getUserOrderById(orderId, userId, userEmail = null) {
       if (!userId) {
         throw new AppError(404, "ORDER_NOT_FOUND", "Order not found");
       }
-      const order = await orders.findUserOrderById(orderId, userId);
+      const order = await orders.findUserOrderById(orderId, userId, userEmail);
       if (!order) {
         throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
       }
-      if (order.user_id && userId && order.user_id !== userId) {
+      if (
+        order.user_id && userId && String(order.user_id) !== String(userId)
+        && String(order.email_order || "").trim().toLowerCase() !== String(userEmail || "").trim().toLowerCase()
+      ) {
         throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
       }
-      return order;
+      return refunds?.attachRefundRequest ? refunds.attachRefundRequest(order) : order;
     },
 
     /**
@@ -347,7 +439,7 @@ export const createOrderService = ({
       if (!order || order.order_code !== access.orderCode) {
         throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
       }
-      return order;
+      return refunds?.attachRefundRequest ? refunds.attachRefundRequest(order) : order;
     },
 
     /**
@@ -381,8 +473,8 @@ export const createOrderService = ({
     /**
      * Cancel order for authenticated user
      */
-    async cancelUserOrder(orderId, userId) {
-      const order = await orders.findUserOrderById(orderId, userId);
+    async cancelUserOrder(orderId, userId, userEmail = null) {
+      const order = await orders.findUserOrderById(orderId, userId, userEmail);
       if (!order) {
         throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
       }
@@ -400,7 +492,7 @@ export const createOrderService = ({
           throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
         }
 
-        const currentOrder = await orders.findUserOrderById(orderId, userId, client);
+        const currentOrder = await orders.findUserOrderById(orderId, userId, userEmail, client);
         if (!currentOrder) {
           throw notFound("ORDER_NOT_FOUND", "Không tìm thấy đơn hàng");
         }
@@ -521,7 +613,10 @@ export const createOrderService = ({
   };
 };
 
-const defaultOrderService = createOrderService({ notifications: notificationOutboxService });
+const defaultOrderService = createOrderService({
+  notifications: notificationOutboxService,
+  refunds: refundService,
+});
 export const orderService = defaultOrderService;
 export const {
   createOrder,

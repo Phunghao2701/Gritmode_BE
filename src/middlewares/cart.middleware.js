@@ -6,7 +6,10 @@ export const resolveCartOwner = ({ allowMissingGuest = false } = {}) => (req, re
     req.cartOwner = { type: "user", userId: req.user.user_id };
     return next();
   }
-  const guestToken = req.get("X-Guest-Token")?.trim();
+  const headerToken = req.get("X-Guest-Token");
+  const bodyToken = req.body?.guest_token;
+  const guestToken = (typeof headerToken === "string" && headerToken.trim())
+    || (typeof bodyToken === "string" && bodyToken.trim());
   if (!guestToken) {
     if (!allowMissingGuest) return next(badRequest("GUEST_TOKEN_REQUIRED", "Thiếu X-Guest-Token"));
     req.cartOwner = { type: "guest" };

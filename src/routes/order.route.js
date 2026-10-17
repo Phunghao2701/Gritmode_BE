@@ -8,6 +8,8 @@ import {
   validateUserOrderQuery,
   validateGuestOrderLookup,
   validateGuestOrderCancel,
+  validateGuestRefundRequest,
+  validateRefundRequest,
 } from "../utils/validation.js";
 import {
   createOrder,
@@ -19,6 +21,7 @@ import {
   lookupGuestOrder,
   cancelGuestOrder,
 } from "../controllers/order.controller.js";
+import { requestMyRefund, requestGuestRefund } from "../controllers/refund.controller.js";
 import {
   getOrderPayment,
   cancelPayOSPayment,
@@ -261,6 +264,12 @@ router.post(
   cancelGuestOrder,
 );
 
+router.post(
+  "/guest/:orderCode/refund-request",
+  validateBody(validateGuestRefundRequest),
+  requestGuestRefund,
+);
+
 /**
  * @swagger
  * /orders/{orderId}:
@@ -334,6 +343,14 @@ router.patch(
   requireAuth,
   validateParam("orderId", validatePositiveId),
   cancelMyOrder,
+);
+
+router.post(
+  "/:orderId/refund-request",
+  requireAuth,
+  validateParam("orderId", validatePositiveId),
+  validateBody(validateRefundRequest),
+  requestMyRefund,
 );
 
 /**

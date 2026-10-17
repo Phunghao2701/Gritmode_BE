@@ -1,5 +1,11 @@
 import { redis } from '../config/redis.js';
 import { AppError } from '../errors/app-error.js';
+import logger from '../utils/logger.js';
+
+const redisFailure = (operation, error) => {
+  logger.error(`[redis] ${operation} failed`, error);
+  return new AppError(503, 'REDIS_UNAVAILABLE', `Redis ${operation} thất bại`);
+};
 
 export class RedisService {
   constructor(client = redis) {
@@ -23,7 +29,7 @@ export class RedisService {
       if (!data) return null;
       return JSON.parse(data);
     } catch (err) {
-      throw new AppError(503, 'REDIS_UNAVAILABLE', `Redis GET thất bại: ${err.message}`);
+      throw redisFailure('GET', err);
     }
   }
 
@@ -38,7 +44,7 @@ export class RedisService {
       }
       return true;
     } catch (err) {
-      throw new AppError(503, 'REDIS_UNAVAILABLE', `Redis SET thất bại: ${err.message}`);
+      throw redisFailure('SET', err);
     }
   }
 
@@ -48,7 +54,7 @@ export class RedisService {
       await this.client.del(key);
       return true;
     } catch (err) {
-      throw new AppError(503, 'REDIS_UNAVAILABLE', `Redis DEL thất bại: ${err.message}`);
+      throw redisFailure('DEL', err);
     }
   }
 
@@ -65,7 +71,7 @@ export class RedisService {
       } while (cursor !== '0');
       return true;
     } catch (err) {
-      throw new AppError(503, 'REDIS_UNAVAILABLE', `Redis SCAN thất bại: ${err.message}`);
+      throw redisFailure('SCAN', err);
     }
   }
 

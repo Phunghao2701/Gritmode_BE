@@ -5,6 +5,7 @@ import pool from "../../src/config/database.js";
 import { createAccessToken } from "../../src/utils/tokens.js";
 import { userRepository } from "../../src/repositories/user.repository.js";
 import { orderRepository } from "../../src/repositories/order.repository.js";
+import { refundRequestRepository } from "../../src/repositories/refund-request.repository.js";
 import { inventoryRepository } from "../../src/repositories/inventory.repository.js";
 import { paymentRepository } from "../../src/repositories/payment.repository.js";
 
@@ -52,6 +53,7 @@ describe("customer & guest order management HTTP contract", () => {
       role: "customer",
       status: "active",
     }));
+    mock.method(refundRequestRepository, "findByOrderId", async () => null);
   });
 
   afterEach(() => {

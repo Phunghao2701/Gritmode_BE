@@ -49,6 +49,26 @@ describe("payment repository", () => {
       assert.equal(res.payment_id, 1);
     });
 
+    test("updates PayOS provider fields only for a pending PayOS payment", async () => {
+      const paymentRow = { payment_id: 1, payment_method: "payos", status_payment: "pending", checkout_url: "https://payos.test" };
+      let queryText = "";
+      mockClient.query = mock.fn(async (query) => {
+        queryText = query;
+        return { rows: [paymentRow], rowCount: 1 };
+      });
+
+      const result = await paymentRepository.updatePayOSPayment(1, {
+        payos_payment_link_id: "link-1",
+        checkout_url: "https://payos.test",
+        qr_code: "qr",
+        expired_at: new Date(),
+      }, mockClient);
+
+      assert.equal(result.payment_id, 1);
+      assert.match(queryText, /payment_method = 'payos'/);
+      assert.match(queryText, /status_payment = 'pending'/);
+    });
+
     test("completeCodPayment and cancelCodPayment update payment status", async () => {
       mockClient.query = mock.fn(async () => ({ rows: [{ payment_id: 1, status_payment: "paid" }], rowCount: 1 }));
       const resPaid = await paymentRepository.completeCodPayment(100, mockClient);

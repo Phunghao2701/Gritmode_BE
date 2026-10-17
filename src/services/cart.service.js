@@ -80,6 +80,9 @@ export const addCartItem = async (owner, input) => {
     const variant = await productVariantRepository.findById(input.product_variant_id, client);
     if (!variant) throw notFound("VARIANT_NOT_FOUND", "Không tìm thấy biến thể sản phẩm");
     const { cart, owner: resolvedOwner } = await activeCart(owner, client, { create: true });
+    if (cartRepository.lockActiveByOwner) {
+      await cartRepository.lockActiveByOwner(resolvedOwner, client);
+    }
     const current = await cartRepository.findItem(cart.cart_id, input.product_variant_id, client);
     const quantity = Number(current?.quantity_cart_item || 0) + input.quantity;
     const available = await availableFor(input.product_variant_id, client);
@@ -93,6 +96,7 @@ export const updateCartItem = async (owner, cartItemId, input) => {
   return withTransaction(async (client) => {
     const { cart } = await activeCart(owner, client);
     if (!cart) throw notFound("CART_ITEM_NOT_FOUND", "Không tìm thấy sản phẩm trong giỏ hàng");
+    if (cartRepository.lockActiveByOwner) await cartRepository.lockActiveByOwner(owner, client);
     const item = await cartRepository.findItemByIdAndCart(cartItemId, cart.cart_id, client);
     if (!item) throw notFound("CART_ITEM_NOT_FOUND", "Không tìm thấy sản phẩm trong giỏ hàng");
     const available = await availableFor(item.product_variant_id, client);
@@ -106,6 +110,7 @@ export const removeCartItem = async (owner, cartItemId) => {
   return withTransaction(async (client) => {
     const { cart } = await activeCart(owner, client);
     if (!cart) throw notFound("CART_ITEM_NOT_FOUND", "Không tìm thấy sản phẩm trong giỏ hàng");
+    if (cartRepository.lockActiveByOwner) await cartRepository.lockActiveByOwner(owner, client);
     const removed = await cartRepository.removeItem(cartItemId, cart.cart_id, client);
     if (!removed) throw notFound("CART_ITEM_NOT_FOUND", "Không tìm thấy sản phẩm trong giỏ hàng");
     return present(cart, owner, client);
@@ -116,6 +121,7 @@ export const clearCart = async (owner) => {
   return withTransaction(async (client) => {
     const { cart } = await activeCart(owner, client);
     if (!cart) return emptyCart(owner);
+    if (cartRepository.lockActiveByOwner) await cartRepository.lockActiveByOwner(owner, client);
     await cartRepository.clearItems(cart.cart_id, client);
     return present(cart, owner, client);
   });

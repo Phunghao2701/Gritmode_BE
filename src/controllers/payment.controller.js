@@ -20,6 +20,7 @@ export const createPaymentController = ({
           email: req.headers["x-guest-email"] || payload.email,
           phone: req.headers["x-guest-phone"] || payload.phone,
         },
+        detailToken: req.headers["x-order-detail-token"],
       }));
       return created(res, result, { message: "Tạo link thanh toán payOS thành công" });
     } catch (error) {
@@ -74,6 +75,8 @@ export const createPaymentController = ({
         phone: req.headers["x-guest-phone"] || req.body?.phone,
       };
       const actor = req.user ? { ...req.user, guestInfo } : guestInfo;
+      const detailToken = req.headers["x-order-detail-token"];
+      if (detailToken) actor.detailToken = detailToken;
       const result = toClientPayment(await payments.cancelPayOSPaymentLink(orderId, actor));
       return ok(res, result, { message: "Hủy link thanh toán thành công" });
     } catch (error) {

@@ -151,11 +151,14 @@ export const orderRepository = {
     return rows[0] || null;
   },
 
-  async findUserOrders({ userId, status_order, page = 1, limit = 10 }, client) {
+  async findUserOrders({ userId, userEmail, status_order, page = 1, limit = 10 }, client) {
     const offset = (page - 1) * limit;
-    const conditions = [`o.user_id = $1`];
-    const values = [userId];
-    let idx = 2;
+    const hasEmailFallback = Boolean(String(userEmail || "").trim());
+    const conditions = [hasEmailFallback
+      ? `(o.user_id = $1 OR (o.user_id IS NULL AND LOWER(o.email_order) = LOWER($2)))`
+      : `o.user_id = $1`];
+    const values = hasEmailFallback ? [userId, String(userEmail).trim()] : [userId];
+    let idx = hasEmailFallback ? 3 : 2;
 
     if (status_order) {
       conditions.push(`o.status_order = $${idx}`);
@@ -175,7 +178,8 @@ export const orderRepository = {
         o.total_order,
         o.created_at,
         p.payment_method,
-        p.status_payment
+        p.status_payment,
+        rr.status_refund_request AS refund_status
       FROM "order" o
       LEFT JOIN LATERAL (
         SELECT payment_method, status_payment
@@ -184,6 +188,12 @@ export const orderRepository = {
         ORDER BY created_at DESC, payment_id DESC
         LIMIT 1
       ) p ON true
+      LEFT JOIN LATERAL (
+        SELECT status_refund_request
+        FROM refund_request
+        WHERE order_id = o.order_id
+        LIMIT 1
+      ) rr ON true
       WHERE ${whereClause}
       ORDER BY o.created_at DESC
       LIMIT $${idx} OFFSET $${idx + 1}
@@ -193,10 +203,13 @@ export const orderRepository = {
     return rows;
   },
 
-  async countUserOrders({ userId, status_order }, client) {
-    const conditions = [`user_id = $1`];
-    const values = [userId];
-    let idx = 2;
+  async countUserOrders({ userId, userEmail, status_order }, client) {
+    const hasEmailFallback = Boolean(String(userEmail || "").trim());
+    const conditions = [hasEmailFallback
+      ? `(user_id = $1 OR (user_id IS NULL AND LOWER(email_order) = LOWER($2)))`
+      : `user_id = $1`];
+    const values = hasEmailFallback ? [userId, String(userEmail).trim()] : [userId];
+    let idx = hasEmailFallback ? 3 : 2;
 
     if (status_order) {
       conditions.push(`status_order = $${idx}`);
@@ -257,9 +270,19 @@ export const orderRepository = {
     return rows[0] || null;
   },
 
-  async findUserOrderById(orderId, userId, client) {
-    const query = `SELECT ${orderColumns} FROM "order" WHERE order_id = $1 AND user_id = $2`;
-    const { rows } = await runner(client).query(query, [orderId, userId]);
+  async findUserOrderById(orderId, userId, userEmail, client) {
+    // Preserve the historical (orderId, userId, client) call signature used by
+    // cancellation and repository consumers while supporting email fallback.
+    if (userEmail && typeof userEmail === "object" && !client) {
+      client = userEmail;
+      userEmail = null;
+    }
+    const hasEmailFallback = Boolean(String(userEmail || "").trim());
+    const query = hasEmailFallback
+      ? `SELECT ${orderColumns} FROM "order" WHERE order_id = $1 AND (user_id = $2 OR (user_id IS NULL AND LOWER(email_order) = LOWER($3)))`
+      : `SELECT ${orderColumns} FROM "order" WHERE order_id = $1 AND user_id = $2`;
+    const values = hasEmailFallback ? [orderId, userId, String(userEmail).trim()] : [orderId, userId];
+    const { rows } = await runner(client).query(query, values);
     const order = rows[0];
     if (!order) return null;
 
@@ -425,9 +448,16 @@ export const orderRepository = {
         o.created_at,
         o.updated_at,
         p.payment_method,
-        p.status_payment
+        p.status_payment,
+        rr.status_refund_request AS refund_status
       FROM "order" o
       LEFT JOIN LATERAL (SELECT payment_method, status_payment FROM payment WHERE order_id = o.order_id ORDER BY created_at DESC LIMIT 1) p ON true
+      LEFT JOIN LATERAL (
+        SELECT status_refund_request
+        FROM refund_request
+        WHERE order_id = o.order_id
+        LIMIT 1
+      ) rr ON true
       ${whereClause}
       ORDER BY ${sortField} ${sortDirection}
       LIMIT $${idx} OFFSET $${idx + 1}

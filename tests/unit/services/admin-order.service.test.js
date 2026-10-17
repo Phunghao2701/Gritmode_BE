@@ -288,23 +288,37 @@ describe("admin order service", () => {
     await assert.rejects(() => service.cancelOrder(999, { adminUserId: "admin-1" }), (err) => err.statusCode === 404);
   });
 
-  test("cancelOrder rejects cancelling directly paid payOS order", async () => {
+  test("cancelOrder creates a refund request when cancelling a paid payOS order", async () => {
     const paidPayos = {
       ...sampleDetail,
       payment: { payment_method: "payos", status_payment: "paid" },
     };
+    let refundArgs = null;
     const service = createAdminOrderService({
       orders: {
         lockOrderById: async () => paidPayos,
         findAdminOrderById: async () => paidPayos,
+        findOrderItems: async () => paidPayos.items,
+        updateOrderStatus: async (id, status) => ({ ...paidPayos, status_order: status }),
       },
+      inventories: { releaseReservedStock: async () => ({}) },
+      payments: { cancelPendingPaymentByOrderId: async () => null },
+      refunds: {
+        createAdminCancellationRefundRequest: async (args) => {
+          refundArgs = args;
+          return { refund_request_id: 7, status_refund_request: "pending" };
+        },
+      },
+      audits: { log: async () => {} },
       transaction,
     });
 
-    await assert.rejects(
-      () => service.cancelOrder(100, { adminUserId: "admin-1" }),
-      (err) => err.statusCode === 409 && err.code === "PAID_ORDER_CANNOT_BE_DIRECTLY_CANCELLED",
-    );
+    const result = await service.cancelOrder(100, { adminUserId: "admin-1" });
+
+    assert.equal(result.status_order, "cancelled");
+    assert.equal(result.refund_required, true);
+    assert.equal(result.refund_request.refund_request_id, 7);
+    assert.equal(refundArgs.adminUserId, "admin-1");
   });
 
   test("completeOrder completes paid payOS order successfully", async () => {
