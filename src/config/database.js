@@ -2,14 +2,14 @@ import pkg from "pg";
 
 const { Pool } = pkg;
 
-// SSL is enabled for remote PostgreSQL. Production always verifies the
-// certificate; local/dev tunnels may opt out explicitly when necessary.
+// SSL is enabled for remote PostgreSQL. Certificate verification stays on by
+// default, but can be disabled explicitly for providers with self-signed
+// certificate chains via POSTGRES_SSL_REJECT_UNAUTHORIZED=false.
 const sslOverride = String(process.env.POSTGRES_SSL || "").trim().toLowerCase();
 const sslVerificationOverride = String(process.env.POSTGRES_SSL_REJECT_UNAUTHORIZED || "").trim().toLowerCase();
-const isProduction = String(process.env.NODE_ENV || "development").trim().toLowerCase() === "production";
 const isLocal = process.env.POSTGRES_URL && (process.env.POSTGRES_URL.includes("localhost") || process.env.POSTGRES_URL.includes("127.0.0.1"));
 const sslOptions = {
-  rejectUnauthorized: isProduction || !["false", "0", "no"].includes(sslVerificationOverride),
+  rejectUnauthorized: !["false", "0", "no"].includes(sslVerificationOverride),
   ...(process.env.POSTGRES_CA ? { ca: process.env.POSTGRES_CA } : {}),
 };
 const useSsl = sslOverride === "false" || sslOverride === "0" || sslOverride === "disable"

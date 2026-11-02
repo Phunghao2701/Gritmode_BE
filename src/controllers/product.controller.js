@@ -6,10 +6,9 @@ import { collectionRepository } from "../repositories/collection.repository.js";
 import { redisService } from "../services/redis.service.js";
 import logger from "../utils/logger.js";
 
-// In-process memory cache (Tier 1: <1ms instant response)
+// In-process memory cache for product details (Tier 1: <1ms instant response)
 const memCacheProducts = new Map();
 const MEM_TTL_PRODUCT_DETAIL = 10 * 60 * 1000; // 10 minutes
-const MEM_TTL_PRODUCT_LIST = 5 * 60 * 1000; // 5 minutes
 const MEM_CACHE_MAX_ENTRIES = 200;
 
 const setProductMemoryCache = (key, data, expiry) => {
@@ -78,22 +77,10 @@ export const createProductController = ({ service = productService } = {}) => ({
     try {
       const query = req.validatedQuery || req.query || {};
       const cacheKey = `products:list:${JSON.stringify(query)}`;
-      const now = Date.now();
-      const memHit = getProductMemoryCache(cacheKey, now);
-      if (memHit && memHit.expiry > now) {
-        res.setHeader("X-Cache", "MEM-HIT");
-        res.setHeader("Cache-Control", "no-store, max-age=0");
-        return ok(res, memHit.data, { message: "Products retrieved successfully" });
-      }
-
       const { data, isCached } = await redisService.getOrSet(cacheKey, async () => {
         const getProductsMethod = service.getProducts || service.list;
         return getProductsMethod.call(service, query);
       }, 900);
-
-      if (data) {
-        setProductMemoryCache(cacheKey, data, now + MEM_TTL_PRODUCT_LIST);
-      }
 
       if (isCached) res.setHeader("X-Cache", "HIT");
       res.setHeader("Cache-Control", "no-store, max-age=0");
