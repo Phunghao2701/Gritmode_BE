@@ -214,6 +214,47 @@ export const productRepository = {
     };
   },
 
+  async findAvailabilityByIdentifier(identifier, client) {
+    const value = String(identifier ?? "");
+    const parsedId = /^\d+$/.test(value) ? Number(value) : null;
+    const productId = Number.isSafeInteger(parsedId) && parsedId <= 2147483647 ? parsedId : null;
+    const { rows } = await runner(client).query(
+      `SELECT p.product_id,
+              pv.product_variant_id,
+              GREATEST(COALESCE(i.quantity_stock, 0) - COALESCE(i.quantity_reserved, 0), 0)::int AS quantity_available
+       FROM product p
+       LEFT JOIN product_variant pv ON pv.product_id = p.product_id
+       LEFT JOIN inventory i ON i.product_variant_id = pv.product_variant_id
+       WHERE p.status_product = 'active'
+         AND (p.slug_product = $1 OR ($2::int IS NOT NULL AND p.product_id = $2))
+       ORDER BY pv.product_variant_id ASC`,
+      [value, productId],
+    );
+    return rows;
+  },
+
+  async findAvailabilityByIds(productIds, client) {
+    const { rows } = await runner(client).query(
+      `SELECT requested.product_id,
+              COALESCE(
+                BOOL_OR(
+                  GREATEST(COALESCE(i.quantity_stock, 0) - COALESCE(i.quantity_reserved, 0), 0) > 0
+                ) FILTER (WHERE p.product_id IS NOT NULL),
+                FALSE
+              ) AS is_available
+       FROM unnest($1::int[]) WITH ORDINALITY AS requested(product_id, request_order)
+       LEFT JOIN product p
+         ON p.product_id = requested.product_id
+        AND p.status_product = 'active'
+       LEFT JOIN product_variant pv ON pv.product_id = p.product_id
+       LEFT JOIN inventory i ON i.product_variant_id = pv.product_variant_id
+       GROUP BY requested.product_id, requested.request_order
+       ORDER BY requested.request_order`,
+      [productIds],
+    );
+    return rows;
+  },
+
   async findDetail(productId, client, existingProduct = null) {
     const db = runner(client);
     const product = existingProduct || (await this.findById(productId, db));

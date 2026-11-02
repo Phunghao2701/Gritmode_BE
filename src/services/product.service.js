@@ -1,4 +1,4 @@
-import { conflict, notFound } from "../errors/app-error.js";
+import { badRequest, conflict, notFound } from "../errors/app-error.js";
 import { productRepository } from "../repositories/product.repository.js";
 import { auditRepository } from "../repositories/audit.repository.js";
 import { withTransaction } from "../config/database.js";
@@ -172,6 +172,52 @@ export const createProductService = ({
       throw notFound("PRODUCT_NOT_FOUND", "Không tìm thấy sản phẩm");
     }
     return products.findDetail(product.product_id, null, product);
+  },
+
+  async getProductAvailability(identifier) {
+    const rows = await products.findAvailabilityByIdentifier(identifier);
+    if (!rows?.length) throw notFound("PRODUCT_NOT_FOUND", "Không tìm thấy sản phẩm");
+
+    return {
+      product_id: Number(rows[0].product_id),
+      variants: rows
+        .filter((row) => row.product_variant_id !== null && row.product_variant_id !== undefined)
+        .map((row) => {
+          const quantityAvailable = Math.max(0, Number(row.quantity_available) || 0);
+          return {
+            product_variant_id: Number(row.product_variant_id),
+            quantity_available: quantityAvailable,
+            is_available: quantityAvailable > 0,
+          };
+        }),
+    };
+  },
+
+  async getProductsAvailability(rawIds) {
+    const invalidIds = () => badRequest(
+      "VALIDATION_ERROR",
+      "Danh sách product IDs không hợp lệ",
+    );
+    if (typeof rawIds !== "string" || !rawIds.trim()) throw invalidIds();
+
+    const tokens = rawIds.split(",").map((value) => value.trim());
+    if (tokens.length > 100 || tokens.some((value) => !/^\d+$/.test(value))) {
+      throw invalidIds();
+    }
+
+    const parsedIds = tokens.map(Number);
+    if (parsedIds.some((id) => !Number.isSafeInteger(id) || id < 1 || id > 2147483647)) {
+      throw invalidIds();
+    }
+    const productIds = [...new Set(parsedIds)];
+    const rows = await products.findAvailabilityByIds(productIds);
+
+    return {
+      items: rows.map((row) => ({
+        product_id: Number(row.product_id),
+        is_available: row.is_available === true,
+      })),
+    };
   },
 
   async getAdminProductById(productId) {
@@ -733,6 +779,8 @@ export const getProducts = (query) => defaultProductService.getProducts(query);
 export const getAdminProducts = (query) => defaultProductService.getAdminProducts(query);
 export const getProductById = (productId) => defaultProductService.getProductById(productId);
 export const getProductBySlug = (slug) => defaultProductService.getProductBySlug(slug);
+export const getProductAvailability = (identifier) => defaultProductService.getProductAvailability(identifier);
+export const getProductsAvailability = (ids) => defaultProductService.getProductsAvailability(ids);
 export const getAdminProductById = (productId) => defaultProductService.getAdminProductById(productId);
 export const publishProduct = (productId, adminUserId) => defaultProductService.publishProduct(productId, adminUserId);
 export const archiveProduct = (productId, adminUserId) => defaultProductService.archiveProduct(productId, adminUserId);

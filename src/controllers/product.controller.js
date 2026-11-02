@@ -115,6 +115,26 @@ export const createProductController = ({ service = productService } = {}) => ({
     } catch (e) { next(e); }
   },
 
+  getProductAvailability: async (req, res, next) => {
+    try {
+      const data = await service.getProductAvailability(req.params.productId);
+      res.setHeader("Cache-Control", "no-store, max-age=0");
+      return ok(res, data, { message: "Product availability retrieved successfully" });
+    } catch (e) {
+      next(e);
+    }
+  },
+
+  getProductsAvailability: async (req, res, next) => {
+    try {
+      const data = await service.getProductsAvailability(req.query.ids);
+      res.setHeader("Cache-Control", "no-store, max-age=0");
+      return ok(res, data, { message: "Products availability retrieved successfully" });
+    } catch (e) {
+      next(e);
+    }
+  },
+
   getProductById: async (req, res, next) => {
     try {
       const identifier = req.params.productId;
@@ -245,6 +265,8 @@ const defaultProductController = createProductController();
 export const getProductMeta = defaultProductController.getProductMeta;
 export const getProducts = defaultProductController.getProducts;
 export const getAdminProducts = defaultProductController.getAdminProducts;
+export const getProductAvailability = defaultProductController.getProductAvailability;
+export const getProductsAvailability = defaultProductController.getProductsAvailability;
 export const getProductById = defaultProductController.getProductById;
 export const getAdminProductById = defaultProductController.getAdminProductById;
 export const publishProduct = defaultProductController.publishProduct;

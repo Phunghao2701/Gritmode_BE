@@ -79,6 +79,52 @@ describe("product HTTP contract", () => {
     assert.equal(notFoundRes.body.code, "PRODUCT_NOT_FOUND");
   });
 
+  test("public product availability returns uncached current variant stock", async () => {
+    mock.method(productRepository, "findAvailabilityByIdentifier", async (identifier) => {
+      assert.equal(identifier, "logo-tee");
+      return [
+        { product_id: 4, product_variant_id: 41, quantity_available: 2 },
+        { product_id: 4, product_variant_id: 42, quantity_available: 0 },
+      ];
+    });
+
+    const res = await request(app).get("/api/v1/products/logo-tee/availability");
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.success, true);
+    assert.deepEqual(res.body.data.variants, [
+      { product_variant_id: 41, quantity_available: 2, is_available: true },
+      { product_variant_id: 42, quantity_available: 0, is_available: false },
+    ]);
+    assert.match(res.headers["cache-control"], /no-store/);
+  });
+
+  test("public batch availability returns uncached live stock for multiple products", async () => {
+    mock.method(productRepository, "findAvailabilityByIds", async (ids) => {
+      assert.deepEqual(ids, [4, 8]);
+      return [
+        { product_id: 4, is_available: true },
+        { product_id: 8, is_available: false },
+      ];
+    });
+
+    const res = await request(app).get("/api/v1/products/availability?ids=4,8");
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.success, true);
+    assert.deepEqual(res.body.data.items, [
+      { product_id: 4, is_available: true },
+      { product_id: 8, is_available: false },
+    ]);
+    assert.match(res.headers["cache-control"], /no-store/);
+  });
+
+  test("public batch availability rejects malformed product IDs", async () => {
+    const res = await request(app).get("/api/v1/products/availability?ids=4,nope");
+    assert.equal(res.status, 400);
+    assert.equal(res.body.code, "VALIDATION_ERROR");
+  });
+
   test("admin endpoints require authentication", async () => {
     const endpoints = [
       ["post", "/api/v1/admin/products/full"],

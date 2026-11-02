@@ -101,6 +101,82 @@ describe("product service", () => {
     );
   });
 
+  test("getProductAvailability returns fresh per-variant availability and hides missing products", async () => {
+    let receivedIdentifier;
+    const service = createProductService({
+      products: {
+        findAvailabilityByIdentifier: async (identifier) => {
+          receivedIdentifier = identifier;
+          return identifier === "logo-tee"
+            ? [
+              { product_id: 8, product_variant_id: 81, quantity_available: "2" },
+              { product_id: 8, product_variant_id: 82, quantity_available: "-1" },
+            ]
+            : [];
+        },
+      },
+      audit: {},
+      transaction,
+    });
+
+    const availability = await service.getProductAvailability("logo-tee");
+
+    assert.equal(receivedIdentifier, "logo-tee");
+    assert.deepEqual(availability, {
+      product_id: 8,
+      variants: [
+        { product_variant_id: 81, quantity_available: 2, is_available: true },
+        { product_variant_id: 82, quantity_available: 0, is_available: false },
+      ],
+    });
+    await assert.rejects(
+      service.getProductAvailability("missing"),
+      (error) => error.code === "PRODUCT_NOT_FOUND" && error.statusCode === 404,
+    );
+  });
+
+  test("getProductsAvailability deduplicates valid product IDs and returns aggregate live availability", async () => {
+    let receivedIds;
+    const service = createProductService({
+      products: {
+        findAvailabilityByIds: async (ids) => {
+          receivedIds = ids;
+          return [
+            { product_id: 8, is_available: true },
+            { product_id: 9, is_available: false },
+          ];
+        },
+      },
+      audit: {},
+      transaction,
+    });
+
+    const result = await service.getProductsAvailability("8,9,8");
+
+    assert.deepEqual(receivedIds, [8, 9]);
+    assert.deepEqual(result, {
+      items: [
+        { product_id: 8, is_available: true },
+        { product_id: 9, is_available: false },
+      ],
+    });
+  });
+
+  test("getProductsAvailability rejects missing, malformed, and oversized batches", async () => {
+    const service = createProductService({
+      products: { findAvailabilityByIds: async () => [] },
+      audit: {},
+      transaction,
+    });
+
+    for (const ids of [undefined, "1,,2", "1,nope", Array.from({ length: 101 }, (_, i) => i + 1).join(",")]) {
+      await assert.rejects(
+        service.getProductsAvailability(ids),
+        (error) => error.code === "VALIDATION_ERROR" && error.statusCode === 400,
+      );
+    }
+  });
+
   test("createProduct creates product and writes audit log", async () => {
     let auditEntry = null;
     const service = createProductService({

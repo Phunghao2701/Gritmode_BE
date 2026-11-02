@@ -103,6 +103,50 @@ describe("product repository", () => {
     assert.equal(detail.collections[0].name_collection, "Summer");
   });
 
+  test("findAvailabilityByIdentifier returns current stock using a parameterized public-product query", async () => {
+    const rows = [
+      { product_id: 7, product_variant_id: 71, quantity_available: 3 },
+      { product_id: 7, product_variant_id: 72, quantity_available: 0 },
+    ];
+    let capturedSql = "";
+    let capturedValues = [];
+    mock.method(pool, "query", async (sql, values) => {
+      capturedSql = sql;
+      capturedValues = values;
+      return { rows };
+    });
+
+    const result = await productRepository.findAvailabilityByIdentifier("tee-black");
+
+    assert.match(capturedSql, /status_product\s*=\s*'active'/i);
+    assert.match(capturedSql, /quantity_stock/i);
+    assert.match(capturedSql, /quantity_reserved/i);
+    assert.deepEqual(capturedValues, ["tee-black", null]);
+    assert.deepEqual(result, rows);
+  });
+
+  test("findAvailabilityByIds returns live aggregate stock for the requested products in request order", async () => {
+    const rows = [
+      { product_id: 7, is_available: true },
+      { product_id: 3, is_available: false },
+    ];
+    let capturedSql = "";
+    let capturedValues = [];
+    mock.method(pool, "query", async (sql, values) => {
+      capturedSql = sql;
+      capturedValues = values;
+      return { rows };
+    });
+
+    const result = await productRepository.findAvailabilityByIds([7, 3]);
+
+    assert.match(capturedSql, /unnest\(\$1::int\[\]\)/i);
+    assert.match(capturedSql, /quantity_stock/i);
+    assert.match(capturedSql, /quantity_reserved/i);
+    assert.deepEqual(capturedValues, [[7, 3]]);
+    assert.deepEqual(result, rows);
+  });
+
   test("findDetail serializes relation queries when using a transaction client", async () => {
     const responses = [
       { rows: [] },

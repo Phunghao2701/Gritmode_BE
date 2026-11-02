@@ -3,6 +3,8 @@ import {
   getProductMeta,
   getProducts,
   getAdminProducts,
+  getProductAvailability,
+  getProductsAvailability,
   getProductById,
   getAdminProductById,
   publishProduct,
@@ -75,6 +77,12 @@ const publicRouter = Router();
  *         description: Tham số truy vấn không hợp lệ
  */
 publicRouter.get("/", validateQuery(validateProductQuery), getProducts);
+
+/** Read live aggregate stock for a bounded set of public products. */
+publicRouter.get("/availability", getProductsAvailability);
+
+/** Read live per-variant inventory; deliberately bypasses product detail caches. */
+publicRouter.get("/:productId/availability", getProductAvailability);
 
 /**
  * @swagger
