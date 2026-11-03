@@ -177,6 +177,165 @@ export const productRepository = {
     }));
   },
 
+  async findDetailsByProductIds(productIds = [], client) {
+    const ids = [...new Set(productIds.map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+    if (!ids.length) return new Map();
+
+    const db = runner(client);
+    const [imagesRes, optionsRes, variantsRes, categoriesRes, collectionsRes] = await Promise.all([
+      db.query(
+        `SELECT product_id, product_image_id, url_product_image, alt_product_image, product_option_value_id, position_product_image, cloudinary_public_id, cloudinary_source_public_id, cloudinary_source_url, crop_profile, image_width, image_height, image_format
+         FROM product_image
+         WHERE product_id = ANY($1::int[])
+         ORDER BY product_id ASC, position_product_image ASC, product_image_id ASC`,
+        [ids],
+      ),
+      db.query(
+        `SELECT po.product_id, po.product_option_id, po.name_option, pov.product_option_value_id, pov.value_option, pov.is_hidden
+         FROM product_option po
+         LEFT JOIN product_option_value pov ON pov.product_option_id = po.product_option_id
+         WHERE po.product_id = ANY($1::int[])
+         ORDER BY po.product_id ASC, po.product_option_id ASC, pov.product_option_value_id ASC`,
+        [ids],
+      ),
+      db.query(
+        `SELECT pv.product_id, pv.product_variant_id, pv.sku, pv.price, pv.sale_price, pv.sale_start_at, pv.sale_end_at,
+                CASE WHEN pv.sale_price IS NOT NULL AND pv.sale_price < pv.price
+                  AND (pv.sale_start_at IS NULL OR pv.sale_start_at <= NOW())
+                  AND (pv.sale_end_at IS NULL OR pv.sale_end_at > NOW())
+                  THEN pv.sale_price ELSE pv.price END AS effective_price,
+                i.inventory_id, COALESCE(i.quantity_stock, 0) AS quantity_stock,
+                COALESCE(i.quantity_reserved, 0) AS quantity_reserved,
+                COALESCE(i.quantity_stock - i.quantity_reserved, 0) AS quantity_available,
+                pov.product_option_value_id, pov.value_option, pov.is_hidden, po.name_option
+         FROM product_variant pv
+         LEFT JOIN inventory i ON i.product_variant_id = pv.product_variant_id
+         LEFT JOIN product_variant_option_value pvov ON pvov.product_variant_id = pv.product_variant_id
+         LEFT JOIN product_option_value pov ON pov.product_option_value_id = pvov.product_option_value_id
+         LEFT JOIN product_option po ON po.product_option_id = pov.product_option_id
+         WHERE pv.product_id = ANY($1::int[])
+         ORDER BY pv.product_id ASC, pv.product_variant_id ASC`,
+        [ids],
+      ),
+      db.query(
+        `SELECT pc.product_id, c.category_id, c.name_category, pc.is_primary
+         FROM product_category pc
+         JOIN category c ON c.category_id = pc.category_id
+         WHERE pc.product_id = ANY($1::int[])
+         ORDER BY pc.product_id ASC, pc.is_primary DESC, c.category_id ASC`,
+        [ids],
+      ),
+      db.query(
+        `SELECT pcol.product_id, col.collection_id, col.parent_collection_id, col.name_collection, pcol.position_product_collection
+         FROM product_collection pcol
+         JOIN collection col ON col.collection_id = pcol.collection_id
+         WHERE pcol.product_id = ANY($1::int[])
+         ORDER BY pcol.product_id ASC, col.collection_id ASC`,
+        [ids],
+      ),
+    ]);
+
+    const details = new Map(ids.map((id) => [id, {
+      images: [], options: [], variants: [], categories: [], collections: [],
+    }]));
+    const optionsByProduct = new Map(ids.map((id) => [id, new Map()]));
+    const variantsByProduct = new Map(ids.map((id) => [id, new Map()]));
+
+    for (const img of imagesRes.rows) {
+      details.get(Number(img.product_id))?.images.push({
+        product_image_id: Number(img.product_image_id),
+        url_product_image: img.url_product_image,
+        alt_product_image: img.alt_product_image,
+        product_option_value_id: img.product_option_value_id ? Number(img.product_option_value_id) : null,
+        position_product_image: Number(img.position_product_image),
+        cloudinary_public_id: img.cloudinary_public_id,
+        cloudinary_source_public_id: img.cloudinary_source_public_id,
+        cloudinary_source_url: img.cloudinary_source_url,
+        crop_profile: img.crop_profile,
+        image_width: img.image_width ? Number(img.image_width) : null,
+        image_height: img.image_height ? Number(img.image_height) : null,
+        image_format: img.image_format,
+      });
+    }
+
+    for (const row of optionsRes.rows) {
+      const productId = Number(row.product_id);
+      const optionId = Number(row.product_option_id);
+      const options = optionsByProduct.get(productId);
+      if (!options) continue;
+      if (!options.has(optionId)) {
+        options.set(optionId, { product_option_id: optionId, name_option: row.name_option, values: [] });
+      }
+      if (row.product_option_value_id) {
+        options.get(optionId).values.push({
+          product_option_value_id: Number(row.product_option_value_id),
+          value_option: row.value_option,
+          is_hidden: Boolean(row.is_hidden),
+        });
+      }
+    }
+
+    for (const row of variantsRes.rows) {
+      const productId = Number(row.product_id);
+      const variantId = Number(row.product_variant_id);
+      const variants = variantsByProduct.get(productId);
+      if (!variants) continue;
+      if (!variants.has(variantId)) {
+        variants.set(variantId, {
+          product_variant_id: variantId,
+          sku: row.sku,
+          price: Number(row.price),
+          sale_price: row.sale_price === null ? null : Number(row.sale_price),
+          sale_start_at: row.sale_start_at,
+          sale_end_at: row.sale_end_at,
+          effective_price: Number(row.effective_price),
+          quantity_available: Math.max(0, Number(row.quantity_available)),
+          inventory: row.inventory_id ? {
+            inventory_id: Number(row.inventory_id),
+            quantity_stock: Number(row.quantity_stock),
+            quantity_reserved: Number(row.quantity_reserved),
+            quantity_available: Math.max(0, Number(row.quantity_available)),
+          } : null,
+          option_values: [],
+        });
+      }
+      if (row.product_option_value_id) {
+        variants.get(variantId).option_values.push({
+          product_option_value_id: Number(row.product_option_value_id),
+          name_option: row.name_option,
+          value_option: row.value_option,
+          is_hidden: Boolean(row.is_hidden),
+        });
+      }
+    }
+
+    for (const row of categoriesRes.rows) {
+      details.get(Number(row.product_id))?.categories.push({
+        category_id: Number(row.category_id),
+        name_category: row.name_category,
+        is_primary: Boolean(row.is_primary),
+      });
+    }
+
+    for (const row of collectionsRes.rows) {
+      details.get(Number(row.product_id))?.collections.push({
+        collection_id: Number(row.collection_id),
+        parent_collection_id: row.parent_collection_id ? Number(row.parent_collection_id) : null,
+        name_collection: row.name_collection,
+        position_product_collection: Number(row.position_product_collection || 0),
+      });
+    }
+
+    for (const [productId, options] of optionsByProduct) {
+      details.get(productId).options = Array.from(options.values());
+    }
+    for (const [productId, variants] of variantsByProduct) {
+      details.get(productId).variants = Array.from(variants.values());
+    }
+
+    return details;
+  },
+
   async findById(productId, client) {
     const { rows } = await runner(client).query(
       `SELECT product_id, name_product, description, status_product, created_at, updated_at FROM product WHERE product_id = $1`,
