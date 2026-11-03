@@ -28,6 +28,7 @@ const pool = new Pool({
 
   // Pool config
   max: 20, // Số lượng kết nối tối đa trong pool
+  min: 1, // Giữ lại một kết nối đã được làm ấm để tránh handshake ở request sau idle.
   idleTimeoutMillis: 30000, // Đóng các kết nối không dùng sau 30 giây
   connectionTimeoutMillis: 10000, // Timeout kết nối
 });

@@ -78,7 +78,9 @@ export const getCart = async (owner) => {
 export const addCartItem = async (owner, input) => {
   return withTransaction(async (client) => {
     const variant = await productVariantRepository.findById(input.product_variant_id, client);
-    if (!variant) throw notFound("VARIANT_NOT_FOUND", "Không tìm thấy biến thể sản phẩm");
+    if (!variant || variant.deleted_at || variant.product_status !== "active") {
+      throw notFound("VARIANT_NOT_FOUND", "Biến thể sản phẩm không còn được bán");
+    }
     const { cart, owner: resolvedOwner } = await activeCart(owner, client, { create: true });
     if (cartRepository.lockActiveByOwner) {
       await cartRepository.lockActiveByOwner(resolvedOwner, client);
@@ -99,6 +101,10 @@ export const updateCartItem = async (owner, cartItemId, input) => {
     if (cartRepository.lockActiveByOwner) await cartRepository.lockActiveByOwner(owner, client);
     const item = await cartRepository.findItemByIdAndCart(cartItemId, cart.cart_id, client);
     if (!item) throw notFound("CART_ITEM_NOT_FOUND", "Không tìm thấy sản phẩm trong giỏ hàng");
+    const variant = await productVariantRepository.findById(item.product_variant_id, client);
+    if (!variant || variant.deleted_at || variant.product_status !== "active") {
+      throw notFound("CART_ITEM_NOT_FOUND", "Sản phẩm trong giỏ hàng không còn được bán");
+    }
     const available = await availableFor(item.product_variant_id, client);
     if (input.quantity > available) throw stockError(available);
     await cartRepository.updateItemQuantity(cartItemId, cart.cart_id, input.quantity, client);

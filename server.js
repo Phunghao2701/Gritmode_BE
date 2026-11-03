@@ -2,6 +2,7 @@ import "dotenv/config";
 import dns from "node:dns";
 import { validateRuntimeConfig, getConfig } from "./src/config/env.js";
 import app from "./src/app.js";
+import pool from "./src/config/database.js";
 import { startNotificationWorker } from "./src/services/notification-dispatcher.service.js";
 
 // Fix Render / Cloud IPv6 connection timeout to Gmail SMTP
@@ -11,6 +12,11 @@ if (dns.setDefaultResultOrder) {
 
 const config = validateRuntimeConfig();
 const PORT = config.port;
+
+// Start a read-only warm-up at boot; the server still starts if DB is unavailable.
+void pool.query("SELECT 1").catch((error) => {
+  console.warn(`[Database] Startup connection warm-up failed (${error.code || "CONNECTION_ERROR"})`);
+});
 
 const server = app.listen(PORT, () => {
   console.log(`[Runtime] APP_TIMEZONE=${config.appTimezone}`);

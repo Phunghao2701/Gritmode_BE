@@ -9,6 +9,7 @@ export const productVariantRepository = {
         pv.product_variant_id,
         pv.product_id,
         pv.sku,
+        pv.deleted_at,
         pv.price::float AS price,
         pv.created_at,
         pv.updated_at,
@@ -48,6 +49,8 @@ export const productVariantRepository = {
         pv.product_variant_id,
         pv.product_id,
         pv.sku,
+        pv.deleted_at,
+        p.status_product AS product_status,
         pv.price::float AS price,
         pv.created_at,
         pv.updated_at,
@@ -66,12 +69,13 @@ export const productVariantRepository = {
           '[]'::json
         ) AS option_values
       FROM product_variant pv
+      JOIN product p ON p.product_id = pv.product_id
       LEFT JOIN inventory inv ON pv.product_variant_id = inv.product_variant_id
       LEFT JOIN product_variant_option_value pvov ON pv.product_variant_id = pvov.product_variant_id
       LEFT JOIN product_option_value pov ON pvov.product_option_value_id = pov.product_option_value_id
       LEFT JOIN product_option po ON pov.product_option_id = po.product_option_id
       WHERE pv.product_variant_id = $1
-      GROUP BY pv.product_variant_id, inv.quantity_stock, inv.quantity_reserved
+      GROUP BY pv.product_variant_id, p.status_product, inv.quantity_stock, inv.quantity_reserved
     `;
     const { rows } = await runner(client).query(query, [variantId]);
     if (!rows[0]) return null;
@@ -85,7 +89,8 @@ export const productVariantRepository = {
     const query = `
       SELECT product_variant_id, product_id, sku, price::float AS price, created_at, updated_at
       FROM product_variant
-      WHERE LOWER(TRIM(sku)) = LOWER(TRIM($1))
+      WHERE deleted_at IS NULL
+        AND LOWER(TRIM(sku)) = LOWER(TRIM($1))
     `;
     const { rows } = await runner(client).query(query, [sku]);
     return rows[0] || null;
@@ -102,8 +107,41 @@ export const productVariantRepository = {
     const { rows } = await runner(client).query(
       `SELECT product_variant_id, product_id, sku
        FROM product_variant
-       WHERE LOWER(TRIM(sku)) = ANY($1::text[])`,
+       WHERE deleted_at IS NULL
+         AND LOWER(TRIM(sku)) = ANY($1::text[])`,
       [normalizedSkus],
+    );
+    return rows;
+  },
+
+  async softDeleteByProduct(productId, client) {
+    const db = runner(client);
+    await db.query(
+      `DELETE FROM cart_item ci
+       USING product_variant pv
+       WHERE ci.product_variant_id = pv.product_variant_id
+         AND pv.product_id = $1
+         AND pv.deleted_at IS NULL`,
+      [productId],
+    );
+    const { rowCount } = await db.query(
+      `UPDATE product_variant
+       SET deleted_at = NOW(), updated_at = NOW()
+       WHERE product_id = $1 AND deleted_at IS NULL`,
+      [productId],
+    );
+    return rowCount;
+  },
+
+  async restoreByIds(variantIds = [], client) {
+    const normalizedIds = [...new Set(variantIds.map(Number).filter(Number.isSafeInteger))];
+    if (!normalizedIds.length) return [];
+    const { rows } = await runner(client).query(
+      `UPDATE product_variant
+       SET deleted_at = NULL, updated_at = NOW()
+       WHERE product_variant_id = ANY($1::bigint[]) AND deleted_at IS NOT NULL
+       RETURNING product_variant_id, product_id, sku`,
+      [normalizedIds],
     );
     return rows;
   },
