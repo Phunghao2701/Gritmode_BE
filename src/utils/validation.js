@@ -487,6 +487,15 @@ export const validateProductQuery = (input = {}) => {
         }
     }
 
+    let includeDetails;
+    if (input.include_details !== undefined && input.include_details !== null && input.include_details !== '') {
+        if ([true, 'true', '1'].includes(input.include_details)) {
+            includeDetails = true;
+        } else if (![false, 'false', '0'].includes(input.include_details)) {
+            errors.push({ field: 'include_details', message: 'include_details phải là true hoặc false' });
+        }
+    }
+
     if (errors.length) return { ok: false, errors };
 
     return {
@@ -504,6 +513,7 @@ export const validateProductQuery = (input = {}) => {
             sort,
             status_product: statusProduct,
             include_total: includeTotal,
+            include_details: includeDetails,
         },
     };
 };

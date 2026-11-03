@@ -127,18 +127,30 @@ export const createProductService = ({
     };
     const sort = query.sort || "newest";
 
+    const includeDetails = async (items) => {
+      if (query.include_details !== true || items.length === 0) return items;
+      const detailsByProductId = await products.findDetailsByProductIds(items.map((item) => item.product_id));
+      return items.map((item) => ({
+        ...item,
+        ...(detailsByProductId.get(Number(item.product_id)) || {
+          images: [], options: [], variants: [], categories: [], collections: [],
+        }),
+      }));
+    };
+
     if (query.include_total === false) {
-      const items = await products.findProducts(filters, pagination, sort);
+      const items = await includeDetails(await products.findProducts(filters, pagination, sort));
       return {
         items,
         pagination: { page, limit, total: null, total_pages: null },
       };
     }
 
-    const [total, items] = await Promise.all([
+    const [total, listedItems] = await Promise.all([
       products.countProducts(filters),
       products.findProducts(filters, pagination, sort),
     ]);
+    const items = await includeDetails(listedItems);
 
     return {
       items,

@@ -74,6 +74,12 @@ const publicRouter = Router();
  *         schema:
  *           type: boolean
  *           default: true
+ *       - in: query
+ *         name: include_details
+ *         description: Set true to include product images, options, variants, categories, and collections
+ *         schema:
+ *           type: boolean
+ *           default: false
  *     responses:
  *       200:
  *         description: Danh sách sản phẩm
