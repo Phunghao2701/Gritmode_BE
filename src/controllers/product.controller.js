@@ -80,7 +80,7 @@ export const createProductController = ({ service = productService } = {}) => ({
       const { data, isCached } = await redisService.getOrSet(cacheKey, async () => {
         const getProductsMethod = service.getProducts || service.list;
         return getProductsMethod.call(service, query);
-      }, 900);
+      }, 900, { waitForCacheWrite: false });
 
       if (isCached) res.setHeader("X-Cache", "HIT");
       res.setHeader("Cache-Control", "no-store, max-age=0");

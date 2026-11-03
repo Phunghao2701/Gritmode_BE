@@ -15,6 +15,10 @@ import { realtimeBus } from "./realtime-bus.service.js";
 import { refundService } from "./refund.service.js";
 import logger from "../utils/logger.js";
 import {
+  aggregateInventoryAdjustments,
+  getMissingInventoryAdjustments,
+} from "../utils/inventory-batch.js";
+import {
   createOrderDetailToken,
   verifyOrderDetailToken,
   ORDER_DETAIL_LINK_TTL,
@@ -37,6 +41,26 @@ export const createOrderService = ({
   refunds = null,
   transaction = withTransaction,
 } = {}) => {
+  const releaseInventoryItems = async (items, client) => {
+    const adjustments = aggregateInventoryAdjustments(
+      items,
+      (item) => item.quantity_order_item ?? item.quantity,
+    );
+    if (adjustments.length === 0) return;
+
+    if (typeof inventories.releaseReservedStockBatch === "function") {
+      const updatedRows = await inventories.releaseReservedStockBatch(adjustments, client);
+      if (getMissingInventoryAdjustments(adjustments, updatedRows).length > 0) {
+        throw notFound("INVENTORY_NOT_FOUND", "Không tìm thấy tồn kho cho một hoặc nhiều biến thể");
+      }
+      return;
+    }
+
+    for (const { product_variant_id, quantity } of adjustments) {
+      await inventories.releaseReservedStock(product_variant_id, quantity, client);
+    }
+  };
+
   const generateOrderCode = () => {
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
     const randomSuffix = randomInt(100000, 999999);
@@ -67,24 +91,63 @@ export const createOrderService = ({
           throw badRequest("CART_EMPTY", "Giỏ hàng của bạn đang trống");
         }
 
-        // 3. Lock & Validate inventory for each item
-        for (const item of cartItems) {
-          const inv = await inventories.lockStockByVariantId(item.product_variant_id, client);
+        // 3. Lock & validate inventory in one stable, sorted batch.
+        const invalidCartItem = cartItems.find((item) => {
+          const variantId = Number(item.product_variant_id);
+          const quantity = Number(item.quantity ?? item.quantity_cart_item);
+          return !Number.isSafeInteger(variantId) || variantId <= 0
+            || !Number.isSafeInteger(quantity) || quantity <= 0;
+        });
+        if (invalidCartItem) {
+          throw badRequest("INVALID_CART_ITEM", "Giỏ hàng có sản phẩm hoặc số lượng không hợp lệ");
+        }
 
+        const inventoryAdjustments = aggregateInventoryAdjustments(
+          cartItems,
+          (item) => item.quantity ?? item.quantity_cart_item,
+        );
+        if (inventoryAdjustments.length === 0) {
+          throw badRequest("CART_EMPTY", "Giỏ hàng không có sản phẩm hợp lệ để đặt hàng");
+        }
+
+        const inventoryRows = typeof inventories.lockStocksByVariantIds === "function"
+          ? await inventories.lockStocksByVariantIds(
+            inventoryAdjustments.map(({ product_variant_id }) => product_variant_id),
+            client,
+          )
+          : await (async () => {
+            const rows = [];
+            for (const { product_variant_id } of inventoryAdjustments) {
+              const row = await inventories.lockStockByVariantId(product_variant_id, client);
+              if (row) rows.push(row);
+            }
+            return rows;
+          })();
+        const inventoryByVariantId = new Map(
+          inventoryRows.map((row) => [Number(row.product_variant_id), row]),
+        );
+        const cartItemByVariantId = new Map();
+        for (const item of cartItems) {
+          const variantId = Number(item.product_variant_id);
+          if (!cartItemByVariantId.has(variantId)) cartItemByVariantId.set(variantId, item);
+        }
+
+        for (const adjustment of inventoryAdjustments) {
+          const { product_variant_id: variantId, quantity: requested } = adjustment;
+          const item = cartItemByVariantId.get(variantId);
+          const inv = inventoryByVariantId.get(variantId);
           if (!inv) {
-            throw notFound("INVENTORY_NOT_FOUND", `Không tìm thấy tồn kho cho sản phẩm ${item.name_product}`);
+            throw notFound("INVENTORY_NOT_FOUND", `Không tìm thấy tồn kho cho sản phẩm ${item?.name_product || variantId}`);
           }
 
           const available = Number(inv.quantity_available);
-          const requested = Number(item.quantity ?? item.quantity_cart_item);
-
           if (requested > available) {
             throw new AppError(
               409,
               "INSUFFICIENT_STOCK",
-              `Sản phẩm ${item.name_product} (${item.variant || item.sku}) không đủ số lượng tồn kho`,
+              `Sản phẩm ${item?.name_product || variantId} (${item?.variant || item?.sku || variantId}) không đủ số lượng tồn kho`,
               {
-                product_variant_id: item.product_variant_id,
+                product_variant_id: variantId,
                 requested_quantity: requested,
                 available_quantity: available,
               },
@@ -279,10 +342,29 @@ export const createOrderService = ({
           client,
         );
 
-        // 11. Reserve Inventory for each item
-        for (const item of cartItems) {
-          const qty = Number(item.quantity ?? item.quantity_cart_item);
-          await inventories.reserveStock(item.product_variant_id, qty, client);
+        // 11. Reserve all inventory with one conditional update.
+        if (typeof inventories.reserveStockBatch === "function") {
+          const reservedRows = await inventories.reserveStockBatch(inventoryAdjustments, client);
+          const missingReservations = getMissingInventoryAdjustments(inventoryAdjustments, reservedRows);
+          if (missingReservations.length > 0) {
+            const failed = missingReservations[0];
+            const item = cartItemByVariantId.get(failed.product_variant_id);
+            const available = Number(inventoryByVariantId.get(failed.product_variant_id)?.quantity_available || 0);
+            throw new AppError(
+              409,
+              "INSUFFICIENT_STOCK",
+              `Sản phẩm ${item?.name_product || failed.product_variant_id} không đủ số lượng tồn kho`,
+              {
+                product_variant_id: failed.product_variant_id,
+                requested_quantity: failed.quantity,
+                available_quantity: available,
+              },
+            );
+          }
+        } else {
+          for (const { product_variant_id, quantity } of inventoryAdjustments) {
+            await inventories.reserveStock(product_variant_id, quantity, client);
+          }
         }
 
         const detailToken = owner.type === "guest" ? createOrderDetailToken(createdOrder) : null;
@@ -515,12 +597,7 @@ export const createOrderService = ({
         // 1. Load items & release inventory reservations
         const items = await orders.findOrderItems(orderId, client);
 
-        for (const item of items) {
-          const qty = Number(item.quantity_order_item || item.quantity);
-          if (item.product_variant_id && qty > 0) {
-            await inventories.releaseReservedStock(item.product_variant_id, qty, client);
-          }
-        }
+        await releaseInventoryItems(items, client);
 
         // 2. Cancel pending payment if exists
         await payments.cancelPendingPaymentByOrderId(orderId, client);
@@ -591,12 +668,7 @@ export const createOrderService = ({
         // 1. Release inventory reservations
         const items = await orders.findOrderItems(currentOrder.order_id, client);
 
-        for (const item of items) {
-          const qty = Number(item.quantity_order_item || item.quantity);
-          if (item.product_variant_id && qty > 0) {
-            await inventories.releaseReservedStock(item.product_variant_id, qty, client);
-          }
-        }
+        await releaseInventoryItems(items, client);
 
         // 2. Cancel pending payment
         await payments.cancelPendingPaymentByOrderId(currentOrder.order_id, client);

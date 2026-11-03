@@ -68,6 +68,12 @@ const publicRouter = Router();
  *           type: string
  *           enum: [newest, oldest, price_asc, price_desc, name_asc, name_desc]
  *           default: newest
+ *       - in: query
+ *         name: include_total
+ *         description: Set false to skip the count query when pagination totals are not needed
+ *         schema:
+ *           type: boolean
+ *           default: true
  *     responses:
  *       200:
  *         description: Danh sách sản phẩm

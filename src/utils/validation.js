@@ -478,6 +478,15 @@ export const validateProductQuery = (input = {}) => {
         }
     }
 
+    let includeTotal;
+    if (input.include_total !== undefined && input.include_total !== null && input.include_total !== '') {
+        if ([false, 'false', '0'].includes(input.include_total)) {
+            includeTotal = false;
+        } else if (![true, 'true', '1'].includes(input.include_total)) {
+            errors.push({ field: 'include_total', message: 'include_total phải là true hoặc false' });
+        }
+    }
+
     if (errors.length) return { ok: false, errors };
 
     return {
@@ -494,6 +503,7 @@ export const validateProductQuery = (input = {}) => {
             max_price: maxPrice,
             sort,
             status_product: statusProduct,
+            include_total: includeTotal,
         },
     };
 };
@@ -763,7 +773,15 @@ export const validateUpdateFullProduct = (input = {}) => {
     });
 
     if (errors.length) return { ok: false, errors };
-    return { ok: true, value: { ...result.value, variants, images } };
+    return {
+        ok: true,
+        value: {
+            ...result.value,
+            status_product: input.status_product ?? undefined,
+            variants,
+            images,
+        },
+    };
 };
 
 export const validateUpdateProduct = (input = {}) => {

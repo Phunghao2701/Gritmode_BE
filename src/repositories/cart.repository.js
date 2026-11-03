@@ -136,7 +136,10 @@ export const cartRepository = {
            pi.position_product_image,pi.product_image_id
          LIMIT 1
        ) img ON true
-       WHERE ci.cart_id=$1 ORDER BY ci.created_at ASC,ci.cart_item_id ASC`, [cartId],
+       WHERE ci.cart_id=$1
+         AND pv.deleted_at IS NULL
+         AND p.status_product='active'
+       ORDER BY ci.created_at ASC,ci.cart_item_id ASC`, [cartId],
     );
     return rows;
   },

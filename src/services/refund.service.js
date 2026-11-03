@@ -7,6 +7,10 @@ import { adminNotificationRepository } from "../repositories/admin-notification.
 import { auditRepository } from "../repositories/audit.repository.js";
 import { withTransaction } from "../config/database.js";
 import { realtimeBus } from "./realtime-bus.service.js";
+import {
+  aggregateInventoryAdjustments,
+  getMissingInventoryAdjustments,
+} from "../utils/inventory-batch.js";
 
 const CUSTOMER_REFUNDABLE_ORDER_STATUSES = [
   "pending",
@@ -137,11 +141,22 @@ export const createRefundService = ({
 
   const releaseOrderInventory = async (orderId, client) => {
     const items = await orders.findOrderItems(orderId, client);
-    for (const item of items) {
-      const quantity = Number(item.quantity_order_item || item.quantity || 0);
-      if (item.product_variant_id && quantity > 0) {
-        await inventories.releaseReservedStock(item.product_variant_id, quantity, client);
+    const adjustments = aggregateInventoryAdjustments(
+      items,
+      (item) => item.quantity_order_item ?? item.quantity ?? 0,
+    );
+    if (adjustments.length === 0) return;
+
+    if (typeof inventories.releaseReservedStockBatch === "function") {
+      const updatedRows = await inventories.releaseReservedStockBatch(adjustments, client);
+      if (getMissingInventoryAdjustments(adjustments, updatedRows).length > 0) {
+        throw notFound("INVENTORY_NOT_FOUND", "Không tìm thấy tồn kho cho một hoặc nhiều biến thể");
       }
+      return;
+    }
+
+    for (const { product_variant_id, quantity } of adjustments) {
+      await inventories.releaseReservedStock(product_variant_id, quantity, client);
     }
   };
 
