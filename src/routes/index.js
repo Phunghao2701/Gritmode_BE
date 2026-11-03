@@ -31,6 +31,15 @@ router.use("/banners", publicBannerRouter);
 router.use("/admin/banners", adminBannerRouter);
 router.use("/products", productRouter);
 router.use("/admin/products", adminProductRouter);
+
+// Specific admin paths must run before the routers mounted at "/admin".
+// Those routers have auth middleware and would otherwise authenticate requests
+// even when their route does not match.
+router.use("/admin/users", adminUserRouter);
+router.use("/admin/dashboard", adminDashboardRouter);
+router.use("/admin/notifications", adminNotificationRouter);
+router.use("/admin/uploads", uploadRouter);
+
 router.use("/admin", productOptionRouter);
 router.use("/admin", productVariantRouter);
 router.use("/admin", productImageRouter);
@@ -45,13 +54,9 @@ router.use("/admin", adminVoucherRouter);
 router.use("/orders", orderRouter);
 router.use("/admin", adminOrderRouter);
 router.use("/admin", adminRefundRouter);
-router.use("/admin/users", adminUserRouter);
-router.use("/admin/dashboard", adminDashboardRouter);
-router.use("/admin/notifications", adminNotificationRouter);
 router.use("/admin", adminAuditLogRouter);
 router.use("/addresses/administrative", administrativeAddressRouter);
 router.use("/contact", contactRouter);
-router.use("/admin/uploads", uploadRouter);
 router.use("/payments", paymentRouter);
 
 export default router;
