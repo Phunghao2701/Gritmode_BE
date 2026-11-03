@@ -1,4 +1,5 @@
 import pool from "../config/database.js";
+import { aggregateInventoryAdjustments } from "../utils/inventory-batch.js";
 
 const runner = (client) => client || pool;
 
@@ -97,6 +98,28 @@ export const inventoryRepository = {
   },
 
   /**
+   * Lock several inventory rows in a stable order for checkout.
+   * A single ordered lock query avoids per-cart-item round trips and reduces
+   * deadlocks when concurrent checkouts contain overlapping variants.
+   */
+  async lockStocksByVariantIds(variantIds = [], client) {
+    const uniqueIds = [...new Set(variantIds.map(Number).filter((id) => Number.isSafeInteger(id) && id > 0))]
+      .sort((left, right) => left - right);
+    if (uniqueIds.length === 0) return [];
+
+    const { rows } = await runner(client).query(
+      `SELECT inventory_id, product_variant_id, quantity_stock, quantity_reserved,
+              (quantity_stock - quantity_reserved) AS quantity_available
+       FROM inventory
+       WHERE product_variant_id = ANY($1::bigint[])
+       ORDER BY product_variant_id ASC
+       FOR UPDATE`,
+      [uniqueIds],
+    );
+    return rows;
+  },
+
+  /**
    * List all inventories with pagination, search, low-stock, out-of-stock filters.
    */
   async findAll(filter = {}, client) {
@@ -174,6 +197,30 @@ export const inventoryRepository = {
   },
 
   /**
+   * Atomically reserve stock for multiple variants in one statement.
+   * Each variant must appear once; duplicate adjustments are safely grouped.
+   */
+  async reserveStockBatch(adjustments = [], client) {
+    const normalized = aggregateInventoryAdjustments(adjustments);
+    if (normalized.length === 0) return [];
+    const variantIds = normalized.map(({ product_variant_id }) => product_variant_id);
+    const quantities = normalized.map(({ quantity }) => quantity);
+    const { rows } = await runner(client).query(
+      `UPDATE inventory AS inv
+       SET quantity_reserved = inv.quantity_reserved + requested.quantity,
+           updated_at = NOW()
+       FROM unnest($1::bigint[], $2::integer[]) AS requested(product_variant_id, quantity)
+       WHERE inv.product_variant_id = requested.product_variant_id
+         AND (inv.quantity_stock - inv.quantity_reserved) >= requested.quantity
+       RETURNING inv.inventory_id, inv.product_variant_id, inv.quantity_stock,
+                 inv.quantity_reserved, (inv.quantity_stock - inv.quantity_reserved) AS quantity_available,
+                 inv.created_at, inv.updated_at`,
+      [variantIds, quantities],
+    );
+    return rows;
+  },
+
+  /**
    * Atomically release reserved stock (Order cancellation).
    * Ensures reserved never goes negative.
    */
@@ -189,6 +236,26 @@ export const inventoryRepository = {
     `;
     const { rows } = await runner(client).query(query, [qty, variantId]);
     return rows[0] || null;
+  },
+
+  /** Release reservations for several order items in one statement. */
+  async releaseReservedStockBatch(adjustments = [], client) {
+    const normalized = aggregateInventoryAdjustments(adjustments);
+    if (normalized.length === 0) return [];
+    const variantIds = normalized.map(({ product_variant_id }) => product_variant_id);
+    const quantities = normalized.map(({ quantity }) => quantity);
+    const { rows } = await runner(client).query(
+      `UPDATE inventory AS inv
+       SET quantity_reserved = GREATEST(0, inv.quantity_reserved - requested.quantity),
+           updated_at = NOW()
+       FROM unnest($1::bigint[], $2::integer[]) AS requested(product_variant_id, quantity)
+       WHERE inv.product_variant_id = requested.product_variant_id
+       RETURNING inv.inventory_id, inv.product_variant_id, inv.quantity_stock,
+                 inv.quantity_reserved, (inv.quantity_stock - inv.quantity_reserved) AS quantity_available,
+                 inv.created_at, inv.updated_at`,
+      [variantIds, quantities],
+    );
+    return rows;
   },
 
   /**
@@ -210,5 +277,28 @@ export const inventoryRepository = {
     `;
     const { rows } = await runner(client).query(query, [qty, variantId]);
     return rows[0] || null;
+  },
+
+  /** Commit reserved stock for several order items in one statement. */
+  async commitReservedStockBatch(adjustments = [], client) {
+    const normalized = aggregateInventoryAdjustments(adjustments);
+    if (normalized.length === 0) return [];
+    const variantIds = normalized.map(({ product_variant_id }) => product_variant_id);
+    const quantities = normalized.map(({ quantity }) => quantity);
+    const { rows } = await runner(client).query(
+      `UPDATE inventory AS inv
+       SET quantity_stock = inv.quantity_stock - requested.quantity,
+           quantity_reserved = GREATEST(0, inv.quantity_reserved - requested.quantity),
+           updated_at = NOW()
+       FROM unnest($1::bigint[], $2::integer[]) AS requested(product_variant_id, quantity)
+       WHERE inv.product_variant_id = requested.product_variant_id
+         AND inv.quantity_stock >= requested.quantity
+         AND inv.quantity_reserved >= requested.quantity
+       RETURNING inv.inventory_id, inv.product_variant_id, inv.quantity_stock,
+                 inv.quantity_reserved, (inv.quantity_stock - inv.quantity_reserved) AS quantity_available,
+                 inv.created_at, inv.updated_at`,
+      [variantIds, quantities],
+    );
+    return rows;
   },
 };

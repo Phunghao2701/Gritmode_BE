@@ -6,6 +6,10 @@ import { auditRepository } from "../repositories/audit.repository.js";
 import { withTransaction } from "../config/database.js";
 import { realtimeBus } from "./realtime-bus.service.js";
 import { refundService } from "./refund.service.js";
+import {
+  aggregateInventoryAdjustments,
+  getMissingInventoryAdjustments,
+} from "../utils/inventory-batch.js";
 
 export const createAdminOrderService = ({
   orders = orderRepository,
@@ -16,6 +20,46 @@ export const createAdminOrderService = ({
   refunds = null,
   transaction = withTransaction,
 } = {}) => {
+  const commitInventoryItems = async (items, client) => {
+    const adjustments = aggregateInventoryAdjustments(
+      items,
+      (item) => item.quantity_order_item ?? item.quantity,
+    );
+    if (adjustments.length === 0) return;
+
+    if (typeof inventories.commitReservedStockBatch === "function") {
+      const updatedRows = await inventories.commitReservedStockBatch(adjustments, client);
+      if (getMissingInventoryAdjustments(adjustments, updatedRows).length > 0) {
+        throw notFound("INVENTORY_NOT_FOUND", "Không tìm thấy tồn kho hoặc không đủ số lượng đã đặt trước");
+      }
+      return;
+    }
+
+    for (const { product_variant_id, quantity } of adjustments) {
+      await inventories.commitReservedStock(product_variant_id, quantity, client);
+    }
+  };
+
+  const releaseInventoryItems = async (items, client) => {
+    const adjustments = aggregateInventoryAdjustments(
+      items,
+      (item) => item.quantity_order_item ?? item.quantity,
+    );
+    if (adjustments.length === 0) return;
+
+    if (typeof inventories.releaseReservedStockBatch === "function") {
+      const updatedRows = await inventories.releaseReservedStockBatch(adjustments, client);
+      if (getMissingInventoryAdjustments(adjustments, updatedRows).length > 0) {
+        throw notFound("INVENTORY_NOT_FOUND", "Không tìm thấy tồn kho cho một hoặc nhiều biến thể");
+      }
+      return;
+    }
+
+    for (const { product_variant_id, quantity } of adjustments) {
+      await inventories.releaseReservedStock(product_variant_id, quantity, client);
+    }
+  };
+
   const publishOrderUpdated = (order, previousStatus) => {
     if (!realtime?.publish || !order) return;
 
@@ -279,12 +323,7 @@ export const createAdminOrderService = ({
         // 1. Commit reserved inventory (stock -= qty, reserved -= qty)
         const items = await orders.findOrderItems(orderId, client);
 
-        for (const item of items) {
-          const qty = Number(item.quantity_order_item || item.quantity);
-          if (item.product_variant_id && qty > 0) {
-            await inventories.commitReservedStock(item.product_variant_id, qty, client);
-          }
-        }
+        await commitInventoryItems(items, client);
 
         // 2. Mark COD as paid if applicable
         if (payment?.payment_method === "cod") {
@@ -356,12 +395,7 @@ export const createAdminOrderService = ({
         // 1. Release inventory reservation (reserved -= qty)
         const items = await orders.findOrderItems(orderId, client);
 
-        for (const item of items) {
-          const qty = Number(item.quantity_order_item || item.quantity);
-          if (item.product_variant_id && qty > 0) {
-            await inventories.releaseReservedStock(item.product_variant_id, qty, client);
-          }
-        }
+        await releaseInventoryItems(items, client);
 
         // 2. Cancel pending payment
         await payments.cancelPendingPaymentByOrderId(orderId, client);

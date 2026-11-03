@@ -64,40 +64,70 @@ export const orderRepository = {
 
   async createOrderItems(items = [], client) {
     if (!items.length) return [];
-    const inserted = [];
-    for (const item of items) {
-      const query = `
-        INSERT INTO order_item (
-          order_id,
-          product_variant_id,
-          name_product_order_item,
-          sku_order_item,
-          variant_order_item,
-          price_order_item,
-          original_price_order_item,
-          quantity_order_item,
-          total_order_item,
-          created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-        RETURNING order_item_id, order_id, product_variant_id, name_product_order_item, sku_order_item,
-                  variant_order_item, price_order_item, original_price_order_item,
-                  quantity_order_item, total_order_item, created_at
-      `;
-      const values = [
+    const payload = items.map((item) => ({
+      order_id: item.order_id,
+      product_variant_id: item.product_variant_id || null,
+      name_product_order_item: item.name_product_order_item,
+      sku_order_item: item.sku_order_item || null,
+      variant_order_item: item.variant_order_item || null,
+      price_order_item: item.price_order_item,
+      original_price_order_item: item.original_price_order_item ?? item.price_order_item,
+      quantity_order_item: item.quantity_order_item,
+      total_order_item: item.total_order_item,
+    }));
+    const query = `
+      INSERT INTO order_item (
+        order_id,
+        product_variant_id,
+        name_product_order_item,
+        sku_order_item,
+        variant_order_item,
+        price_order_item,
+        original_price_order_item,
+        quantity_order_item,
+        total_order_item,
+        created_at
+      )
+      SELECT
         item.order_id,
-        item.product_variant_id || null,
+        item.product_variant_id,
         item.name_product_order_item,
-        item.sku_order_item || null,
-        item.variant_order_item || null,
+        item.sku_order_item,
+        item.variant_order_item,
         item.price_order_item,
-        item.original_price_order_item ?? item.price_order_item,
+        COALESCE(item.original_price_order_item, item.price_order_item),
         item.quantity_order_item,
         item.total_order_item,
-      ];
-      const { rows } = await runner(client).query(query, values);
-      inserted.push(rows[0]);
-    }
-    return inserted;
+        NOW()
+      FROM jsonb_to_recordset($1::jsonb) AS item(
+        order_id bigint,
+        product_variant_id bigint,
+        name_product_order_item text,
+        sku_order_item text,
+        variant_order_item text,
+        price_order_item bigint,
+        original_price_order_item bigint,
+        quantity_order_item integer,
+        total_order_item bigint
+      )
+      RETURNING order_item_id, order_id, product_variant_id, name_product_order_item, sku_order_item,
+                variant_order_item, price_order_item, original_price_order_item,
+                quantity_order_item, total_order_item, created_at
+    `;
+    const { rows } = await runner(client).query(query, [JSON.stringify(payload)]);
+
+    // INSERT .. RETURNING has no ordering guarantee. Cart rows are unique by
+    // product variant, so restore the input order for the existing response contract.
+    const inputPositionByVariantId = new Map();
+    items.forEach((item, index) => {
+      const key = String(item.product_variant_id ?? "");
+      if (!inputPositionByVariantId.has(key)) inputPositionByVariantId.set(key, index);
+    });
+    return rows.sort((left, right) => {
+      const leftPosition = inputPositionByVariantId.get(String(left.product_variant_id ?? "")) ?? Number.MAX_SAFE_INTEGER;
+      const rightPosition = inputPositionByVariantId.get(String(right.product_variant_id ?? "")) ?? Number.MAX_SAFE_INTEGER;
+      return leftPosition - rightPosition || Number(left.order_item_id) - Number(right.order_item_id);
+    });
   },
 
   async createOrderAddress(addr, client) {
