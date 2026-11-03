@@ -26,7 +26,7 @@ const buildOrderBy = (sort) => {
  * Build WHERE clause conditions for filtering.
  */
 const buildWhere = (filter) => {
-  const conditions = [];
+  const conditions = ["pv.deleted_at IS NULL", "p.status_product <> 'archived'"];
   const params = [];
   let idx = 1;
 
@@ -77,6 +77,8 @@ export const inventoryRepository = {
     const query = `
       ${BASE_SELECT}
       WHERE inv.product_variant_id = $1
+        AND pv.deleted_at IS NULL
+        AND p.status_product <> 'archived'
     `;
     const { rows } = await runner(client).query(query, [variantId]);
     return rows[0] || null;
@@ -143,10 +145,6 @@ export const inventoryRepository = {
    * Count total inventory records matching filter.
    */
   async countAll(filter = {}, client) {
-    if (!filter.search && !filter.low_stock && !filter.out_of_stock) {
-      const { rows } = await runner(client).query(`SELECT COUNT(*) AS count FROM inventory`);
-      return parseInt(rows[0]?.count || "0", 10);
-    }
     const { whereClause, params } = buildWhere(filter);
     const query = `
       SELECT COUNT(*) AS count
