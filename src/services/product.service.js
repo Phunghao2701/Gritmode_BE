@@ -127,6 +127,14 @@ export const createProductService = ({
     };
     const sort = query.sort || "newest";
 
+    if (query.include_total === false) {
+      const items = await products.findProducts(filters, pagination, sort);
+      return {
+        items,
+        pagination: { page, limit, total: null, total_pages: null },
+      };
+    }
+
     const [total, items] = await Promise.all([
       products.countProducts(filters),
       products.findProducts(filters, pagination, sort),

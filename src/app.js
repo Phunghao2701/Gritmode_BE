@@ -16,14 +16,32 @@ const allowedOrigins = (process.env.FRONTEND_URL || '')
   .split(',')
   .map((o) => o.trim())
   .filter(Boolean);
+const allowedOriginSet = new Set(allowedOrigins);
+
+if (process.env.NODE_ENV !== 'production') {
+  for (const origin of allowedOrigins) {
+    try {
+      const parsedOrigin = new URL(origin);
+      if (parsedOrigin.hostname === 'localhost') {
+        parsedOrigin.hostname = '127.0.0.1';
+        allowedOriginSet.add(parsedOrigin.origin);
+      } else if (parsedOrigin.hostname === '127.0.0.1') {
+        parsedOrigin.hostname = 'localhost';
+        allowedOriginSet.add(parsedOrigin.origin);
+      }
+    } catch {
+      // Ignore malformed entries; the CORS middleware will not allow them.
+    }
+  }
+}
 
 // Cấu hình Middleware hệ thống
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
     if (
-      allowedOrigins.length > 0 &&
-      allowedOrigins.includes(origin)
+      allowedOriginSet.size > 0 &&
+      allowedOriginSet.has(origin)
     ) {
       return callback(null, true);
     }
