@@ -82,6 +82,9 @@ export const createProductVariantService = ({
     async createProductVariant(productId, data, userId) {
       const product = await products.findById(productId);
       if (!product) throw notFound("PRODUCT_NOT_FOUND", "Không tìm thấy sản phẩm");
+      if (product.status_product === "archived") {
+        throw conflict("PRODUCT_ARCHIVED", "Không thể thêm biến thể cho sản phẩm đã lưu trữ");
+      }
 
       const normalizedSku = data.sku.trim().toUpperCase();
       const existingSku = await variants.findBySku(normalizedSku);
@@ -111,6 +114,9 @@ export const createProductVariantService = ({
     async updateProductVariant(variantId, data, userId) {
       const existing = await variants.findById(variantId);
       if (!existing) throw notFound("VARIANT_NOT_FOUND", "Không tìm thấy biến thể sản phẩm");
+      if (existing.deleted_at || existing.product_status === "archived") {
+        throw conflict("VARIANT_ARCHIVED", "Không thể chỉnh sửa biến thể của sản phẩm đã lưu trữ");
+      }
 
       let normalizedSku = undefined;
       if (data.sku) {

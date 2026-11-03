@@ -773,7 +773,15 @@ export const validateUpdateFullProduct = (input = {}) => {
     });
 
     if (errors.length) return { ok: false, errors };
-    return { ok: true, value: { ...result.value, variants, images } };
+    return {
+        ok: true,
+        value: {
+            ...result.value,
+            status_product: input.status_product ?? undefined,
+            variants,
+            images,
+        },
+    };
 };
 
 export const validateUpdateProduct = (input = {}) => {

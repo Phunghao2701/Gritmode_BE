@@ -218,6 +218,7 @@ export const createProductService = ({
         throw conflict("INVALID_PRODUCT_STATUS", "Chỉ Product Active mới có thể archive");
       }
       const updated = await products.updateStatus(productId, PRODUCT_STATUS.ARCHIVED, client);
+      await variants.softDeleteByProduct(productId, client);
       await audit.log({ userId: adminUserId, action: "archive_product", entityName: "product", entityId: productId, oldData: product, newData: updated }, client);
       return updated;
     });
@@ -350,6 +351,10 @@ export const createProductService = ({
       const createdCollections = [];
       for (const [position, collectionId] of (input.collection_ids || []).entries()) {
         createdCollections.push(await collections.addProduct(collectionId, product.product_id, position, client));
+      }
+
+      if (product.status_product === PRODUCT_STATUS.ARCHIVED) {
+        await variants.softDeleteByProduct(product.product_id, client);
       }
 
       const result = { ...product, options: createdOptions, variants: createdVariants, images: createdImages, categories: createdCategories, collections: createdCollections };
@@ -693,6 +698,18 @@ export const createProductService = ({
         await products.deleteUnusedOptions(productId, client);
       }
 
+      const resultingStatus = input.status_product ?? existing.status_product;
+      if (resultingStatus === PRODUCT_STATUS.ARCHIVED) {
+        await variants.softDeleteByProduct(productId, client);
+      } else if (
+        existing.status_product === PRODUCT_STATUS.ARCHIVED
+        && resultingStatus !== PRODUCT_STATUS.ARCHIVED
+      ) {
+        // Only retained variants are eligible for restoration. The partial
+        // unique SKU index rejects SKUs that another product has reclaimed.
+        await variants.restoreByIds([...retainedVariantIds], client);
+      }
+
       const updated = await products.findDetail(productId, client);
       if (audit?.log) {
         await audit.log({ userId: adminUserId, action: "update_full_product", entityName: "product", entityId: productId, oldData: existing, newData: updated }, client);
@@ -710,10 +727,13 @@ export const createProductService = ({
         throw notFound("PRODUCT_NOT_FOUND", "Không tìm thấy sản phẩm");
       }
 
-      if (existing.status_product === PRODUCT_STATUS.ARCHIVED) return existing;
-      const deleted = await products.updateStatus(productId, PRODUCT_STATUS.ARCHIVED, client);
+      const alreadyArchived = existing.status_product === PRODUCT_STATUS.ARCHIVED;
+      const deleted = alreadyArchived
+        ? existing
+        : await products.updateStatus(productId, PRODUCT_STATUS.ARCHIVED, client);
+      await variants.softDeleteByProduct(productId, client);
 
-      if (audit?.log) {
+      if (!alreadyArchived && audit?.log) {
         await audit.log(
           {
             userId: adminUserId,
